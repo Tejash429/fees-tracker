@@ -1,0 +1,153 @@
+# PLAN
+
+## Context
+- You asked to **implement all previously recommended website improvements sequentially**, one change at a time.
+- You explicitly asked to:
+  - **Skip all SEO-related changes**.
+  - **Remove business-focused features/points** from scope.
+- Current app is a protected Next.js 14 admin dashboard (students, payments, pending dues, analytics) with Supabase auth/data, React Query, shadcn-style UI, and charting.
+- This plan now covers only non-SEO, non-business improvements across UX/navigation, design, content clarity, performance, mobile responsiveness, and accessibility.
+- Decisions captured from your latest replies:
+  - Fee rules should be configurable **per class** (not fixed hardcoded 3k/4k forever).
+  - Implement fee settings for **Class 9 and Class 10 only** (no dynamic class expansion right now).
+  - Store one **yearly fee** per class and auto-derive half-yearly as 50% (simplest fit for your workflow).
+  - Branding should stay neutral (no personal/business naming needed).
+  - Current colors should be redesigned.
+  - Keep **dark mode only**.
+  - Default pagination size should be **10 rows/page**.
+
+## Approach
+- Execute improvements in **small, sequential batches** so each change is testable and reversible.
+- Prioritize foundational UX/performance/accessibility improvements first, then visual/design polish, then deeper feature additions.
+- Reuse existing server data/actions/query utilities wherever possible.
+- Keep current app architecture (server-first route pages + client interactive sections).
+- For fee settings, add a small persisted config layer (Supabase table + safe defaults fallback) while keeping current fee calculation flow reusable.
+
+## Files to modify
+- App shell / layout / navigation
+  - `app/layout.tsx`
+  - `app/(protected)/layout.tsx`
+  - `components/shared/app-shell.tsx`
+  - `components/shared/nav-links.tsx`
+  - `components/shared/page-header.tsx`
+- Pages/routes (new and existing)
+  - `app/(protected)/page.tsx`
+  - `app/(protected)/students/page.tsx`
+  - `app/(protected)/payments/page.tsx`
+  - `app/(protected)/pending/page.tsx`
+  - `app/(protected)/analytics/page.tsx`
+  - `app/(protected)/students/[id]/page.tsx` (new)
+  - `app/(protected)/settings/page.tsx` (new; class-fee settings)
+  - `app/(protected)/help/page.tsx` (new)
+- Data/query layer
+  - `lib/queries.ts`
+  - `lib/actions.ts`
+  - `lib/fees.ts`
+  - `lib/query-client-fetchers.ts`
+  - `lib/query-keys.ts`
+  - `types/index.ts` (fee settings types)
+- Documentation / setup
+  - `docs/SUPABASE_RLS_CHECKLIST.md` (update for new fee-settings table/policies)
+  - `README.md` (new fee-settings setup notes)
+- API routes
+  - `app/api/students/route.ts`
+  - `app/api/payments/route.ts`
+  - `app/api/pending/route.ts`
+  - `app/api/sheet-fetch/route.ts`
+- Feature components
+  - `components/students/students-table.tsx`
+  - `components/students/student-form-sheet.tsx`
+  - `components/students/student-import-dialog.tsx`
+  - `components/students/delete-student-button.tsx`
+  - `components/payments/payments-table.tsx`
+  - `components/payments/record-payment-dialog.tsx`
+  - `components/payments/delete-payment-button.tsx`
+  - `components/payments/pending-table.tsx`
+  - `components/dashboard/dashboard-page-content.tsx`
+  - `components/dashboard/analytics-page-content.tsx`
+  - `components/dashboard/stat-cards.tsx`
+  - chart components under `components/dashboard/*chart*.tsx`
+- UI primitives (for accessibility + mobile ergonomics)
+  - `components/ui/dialog.tsx`
+  - `components/ui/sheet.tsx`
+  - `components/ui/table.tsx`
+  - `components/ui/button.tsx`
+  - `components/ui/input.tsx`
+  - `components/ui/select.tsx`
+  - `components/ui/badge.tsx`
+- Styling/tokens
+  - `app/globals.css`
+  - `tailwind.config.ts`
+  - `public/*` (brand assets/icons if provided)
+
+## Reuse
+- Existing data/query helpers:
+  - `lib/query-client-fetchers.ts`
+  - `lib/query-keys.ts`
+  - `components/providers/query-provider.tsx`
+- Existing server queries/actions:
+  - `lib/queries.ts` (`getStudents`, `getPayments`, `getPendingStudentsData`, `getDashboardData`, `getAnalyticsData`)
+  - `lib/actions.ts` (student/payment CRUD/import actions)
+- Existing reusable UI patterns:
+  - `components/shared/empty-state.tsx`
+  - `components/shared/page-header.tsx`
+  - table/dialog/sheet primitives in `components/ui/*`
+- Existing utilities:
+  - `lib/utils.ts` (`formatDate`, `formatCurrency`, etc.)
+  - `lib/fees.ts` (current fee logic)
+
+## Steps
+- [x] 1) Scope cleanup: remove SEO and business/conversion items from implementation list and lock final in-scope checklist.
+- [x] 2) Refetch UX: keep previous data visible during background refetch (replace full skeleton swaps on `isFetching` with subtle updating indicators).
+- [x] 3) Safer destructive actions: replace all `window.confirm` with accessible confirm dialogs and add optional undo feedback where practical.
+- [x] 4) Form UX + accessibility baseline: migrate major actions to semantic `<form>` submit flows; add inline field-level validation and `aria-live` error messaging.
+- [x] 5) URL-synced filters: persist table filters/search in query params for Students/Payments/Pending views.
+- [x] 6) Students table scalability: add sorting + pagination support (UI + API + query layer, default page size 10).
+- [x] 7) Payments table scalability: add sorting + pagination support (UI + API + query layer, default page size 10).
+- [x] 8) Student details route: add `students/[id]` profile page with payment history and quick actions.
+- [x] 9) Settings for fee rules: replace hardcoded fee map with persisted **class-wise yearly fee settings** (Class 9/10), with half-yearly derived automatically.
+- [x] 10) Dashboard clarity: add trend deltas/period comparison and stronger KPI hierarchy.
+- [x] 11) Action density cleanup: reduce row action clutter via overflow menu pattern on dense tables.
+- [x] 12) Empty states refresh: improve copy + actionable next-step CTAs across pages.
+- [x] 13) Content clarity pass: rename ambiguous labels (e.g., import CTA text), add helper microcopy for payment constraints, add “last updated” indicators.
+- [x] 14) Help/FAQ page: add concise in-app guidance for imports, payments, dues logic, and common errors.
+- [x] 15) Performance pass A: lazy-load heavy import parsers (`xlsx`, `papaparse`) only when import flow is used.
+- [x] 16) Performance pass B: tighten query invalidation scope per mutation to avoid unnecessary network churn.
+- [x] 17) Performance pass C: optimize pending page data loading to avoid overfetching where possible.
+- [x] 18) Sheet fetch hardening: add timeout, response-size guard, and URL allowlist protections.
+- [x] 19) Mobile nav upgrade: add mobile-friendly navigation pattern (drawer/sheet) instead of wrapped top link row.
+- [x] 20) Mobile data views: add compact responsive card/list rendering for key tables on narrow screens.
+- [x] 21) Mobile dialogs/sheets: improve full-screen behavior on small screens with sticky action footers.
+- [x] 22) Touch ergonomics: ensure interactive controls meet touch target sizes and spacing.
+- [x] 23) Import flow mobile usability: simplify preview/edit experience for smaller viewports.
+- [x] 24) Accessibility final pass: skip link + landmark/focus improvements, chart text alternatives/legends, non-color status indicators.
+- [x] 25) Visual design pass: apply neutral branding polish and redesign the dark-only color system.
+- [x] 26) End-to-end verification + regression (desktop/mobile, keyboard, screen-reader basics, lint/build).
+
+## Verification
+- Functional regression:
+  - Students: create/edit/delete/import/search/filter/sort/paginate.
+  - Payments: create/edit/delete/bulk-delete/filter/sort/paginate.
+  - Pending dues: status accuracy + quick payment flow.
+  - Analytics/dashboard: charts, deltas, empty states, and update indicators.
+- UX checks:
+  - No full-content flicker during background refetch.
+  - URL reflects active filters; back/forward keeps state.
+  - Mobile nav and mobile table/card modes are usable on small screens.
+- Accessibility checks:
+  - Keyboard-only navigation for all core flows.
+  - Screen reader announcements for validation errors and async updates.
+  - Focus management and visible focus rings.
+  - Chart information available in non-visual/text form.
+- Performance checks:
+  - Reduced initial bundle cost for students/import-heavy route.
+  - Overfetching reduced after scoped invalidation + pagination.
+- Quality checks:
+  - `npm run lint`
+  - `npm run build`
+
+## Locked decisions
+- Fee settings: yearly fee per class, half-yearly auto-derived at 50%.
+- Theme: dark-only (with redesigned colors).
+- Class scope: only Class 9 and Class 10.
+- Pagination default: 10 rows/page.
