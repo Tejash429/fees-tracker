@@ -351,7 +351,7 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
                     <div className="grid gap-3">
                       <Input
                         placeholder="Student name"
-                        value={row.name}
+                        value={row.name ?? ''}
                         onChange={(event) => updateRow(row.rowNumber, 'name', event.target.value)}
                       />
 
@@ -373,13 +373,13 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
 
                       <Input
                         placeholder="Phone"
-                        value={row.phone}
+                        value={row.phone ?? ''}
                         onChange={(event) => updateRow(row.rowNumber, 'phone', event.target.value)}
                       />
 
                       <Input
                         type="date"
-                        value={row.enrollment_date}
+                        value={row.enrollment_date ?? ''}
                         onChange={(event) => updateRow(row.rowNumber, 'enrollment_date', event.target.value)}
                       />
                     </div>
@@ -414,7 +414,7 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
                         <TableCell className="text-muted-foreground">{row.rowNumber}</TableCell>
                         <TableCell>
                           <Input
-                            value={row.name}
+                            value={row.name ?? ''}
                             onChange={(event) => updateRow(row.rowNumber, 'name', event.target.value)}
                           />
                         </TableCell>
@@ -437,14 +437,14 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
                         </TableCell>
                         <TableCell>
                           <Input
-                            value={row.phone}
+                            value={row.phone ?? ''}
                             onChange={(event) => updateRow(row.rowNumber, 'phone', event.target.value)}
                           />
                         </TableCell>
                         <TableCell>
                           <Input
                             type="date"
-                            value={row.enrollment_date}
+                            value={row.enrollment_date ?? ''}
                             onChange={(event) => updateRow(row.rowNumber, 'enrollment_date', event.target.value)}
                           />
                         </TableCell>
