@@ -1,16 +1,25 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import {
+  ArrowUpDown,
+  Download,
+  Eye,
+  Printer,
+  Search,
+  Trash2,
+  X
+} from 'lucide-react';
 import { deletePaymentsBulkAction } from '@/lib/actions';
 import { exportToExcel } from '@/lib/export';
 import { printPaymentReceipt } from '@/components/payments/payment-receipt';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Download } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -43,7 +52,7 @@ import { PaymentDetailsSheet } from '@/components/payments/payment-details-sheet
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog';
 import { fetchPaymentsTableClient, fetchStudentsClient } from '@/lib/query-client-fetchers';
 import { queryKeys } from '@/lib/query-keys';
-import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
+import { cn, formatCurrency, formatDate, formatDateTime, toISODate } from '@/lib/utils';
 import { PaymentType, PaymentsSortBy, PaymentsTableData, Student, StudentClass } from '@/types';
 
 const checkboxClassName =
@@ -51,14 +60,41 @@ const checkboxClassName =
 
 const PAYMENTS_PAGE_SIZE = 10;
 
+function getInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'ST';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+const AVATAR_COLORS = [
+  'bg-violet-500/15 text-violet-300 border-violet-500/30',
+  'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+  'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+  'bg-amber-500/15 text-amber-300 border-amber-500/30',
+  'bg-rose-500/15 text-rose-300 border-rose-500/30',
+  'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+];
+
+function getAvatarColor(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
 function PaymentsTableSkeleton() {
   return (
-    <div className="space-y-3">
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
+    <div className="space-y-4">
+      <div className="h-10 w-64 rounded-lg bg-muted/40 animate-pulse" />
+      <div className="h-16 w-full rounded-xl bg-muted/30 animate-pulse" />
+      <div className="space-y-2 rounded-xl border border-border/60 p-4">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+      </div>
     </div>
   );
 }
@@ -187,23 +223,24 @@ export function PaymentsTable({
     }
   );
 
-  const payments = useMemo(() => data?.rows ?? [], [data?.rows]);
-  const total = data?.total || 0;
-  const totalPages = data?.totalPages || 1;
-
+  const payments = data.rows;
+  const total = data.total;
+  const totalPages = Math.max(1, data.totalPages);
   const isPending = isPendingPayments || isPendingStudents;
   const isFetching = isFetchingPayments || isFetchingStudents;
 
   const selectedIdSet = useMemo(() => new Set(selectedPaymentIds), [selectedPaymentIds]);
   const visiblePaymentIds = useMemo(() => payments.map((payment) => payment.id), [payments]);
 
-  const selectedVisibleCount = useMemo(
-    () => visiblePaymentIds.filter((id) => selectedIdSet.has(id)).length,
-    [visiblePaymentIds, selectedIdSet]
-  );
+  const allVisibleSelected = useMemo(() => {
+    if (!visiblePaymentIds.length) return false;
+    return visiblePaymentIds.every((id) => selectedIdSet.has(id));
+  }, [visiblePaymentIds, selectedIdSet]);
 
-  const allVisibleSelected = visiblePaymentIds.length > 0 && selectedVisibleCount === visiblePaymentIds.length;
-  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
+  const someVisibleSelected = useMemo(() => {
+    if (!visiblePaymentIds.length) return false;
+    return visiblePaymentIds.some((id) => selectedIdSet.has(id)) && !allVisibleSelected;
+  }, [visiblePaymentIds, selectedIdSet, allVisibleSelected]);
 
   useEffect(() => {
     if (selectAllRef.current) {
@@ -212,51 +249,32 @@ export function PaymentsTable({
   }, [someVisibleSelected]);
 
   useEffect(() => {
-    const validIds = new Set(payments.map((payment) => payment.id));
-    setSelectedPaymentIds((prev) => prev.filter((id) => validIds.has(id)));
-  }, [payments]);
+    const nextSearch = searchParams.get('q') || '';
+    const nextClass =
+      searchParams.get('class') === '9' || searchParams.get('class') === '10'
+        ? (searchParams.get('class') as StudentClass)
+        : 'all';
+    const nextType =
+      searchParams.get('type') === 'yearly' || searchParams.get('type') === 'half_yearly'
+        ? (searchParams.get('type') as PaymentType)
+        : 'all';
+    const nextPage = Math.max(1, Number(searchParams.get('page') || 1));
+    const nextSortBy =
+      searchParams.get('sortBy') === 'payment_date' ||
+      searchParams.get('sortBy') === 'amount' ||
+      searchParams.get('sortBy') === 'period_end' ||
+      searchParams.get('sortBy') === 'created_at'
+        ? (searchParams.get('sortBy') as PaymentsSortBy)
+        : 'payment_date';
+    const nextSortDir = searchParams.get('sortDir') === 'asc' ? 'asc' : 'desc';
 
-  useEffect(() => {
-    if (page <= totalPages) return;
-
-    const nextPage = totalPages;
+    setSearch(nextSearch);
+    setClassFilter(nextClass);
+    setTypeFilter(nextType);
     setPage(nextPage);
-
-    const params = new URLSearchParams(searchParams.toString());
-
-    if (classFilter !== 'all') {
-      params.set('class', classFilter);
-    } else {
-      params.delete('class');
-    }
-
-    if (typeFilter !== 'all') {
-      params.set('type', typeFilter);
-    } else {
-      params.delete('type');
-    }
-
-    if (nextPage > 1) {
-      params.set('page', String(nextPage));
-    } else {
-      params.delete('page');
-    }
-
-    if (sortBy !== 'payment_date') {
-      params.set('sortBy', sortBy);
-    } else {
-      params.delete('sortBy');
-    }
-
-    if (sortDir !== 'desc') {
-      params.set('sortDir', sortDir);
-    } else {
-      params.delete('sortDir');
-    }
-
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [page, totalPages, searchParams, classFilter, typeFilter, sortBy, sortDir, router, pathname]);
+    setSortBy(nextSortBy);
+    setSortDir(nextSortDir);
+  }, [searchParams]);
 
   const toggleRowSelection = (paymentId: string) => {
     setSelectedPaymentIds((prev) => {
@@ -270,13 +288,11 @@ export function PaymentsTable({
   const toggleSelectAllVisible = (checked: boolean) => {
     setSelectedPaymentIds((prev) => {
       const nextSet = new Set(prev);
-
       if (checked) {
         visiblePaymentIds.forEach((id) => nextSet.add(id));
       } else {
         visiblePaymentIds.forEach((id) => nextSet.delete(id));
       }
-
       return Array.from(nextSet);
     });
   };
@@ -288,7 +304,6 @@ export function PaymentsTable({
       toast.error('Select at least one payment to delete');
       return;
     }
-
     setBulkDeleteDialogOpen(true);
   };
 
@@ -320,269 +335,434 @@ export function PaymentsTable({
     if (!total) return '0 of 0';
     const from = (page - 1) * PAYMENTS_PAGE_SIZE + 1;
     const to = Math.min(page * PAYMENTS_PAGE_SIZE, total);
-    return `${from}-${to} of ${total}`;
+    return `${from}–${to} of ${total}`;
   }, [page, total]);
 
   if (isPending && !payments.length) {
     return <PaymentsTableSkeleton />;
   }
 
-  if (!payments.length && total === 0) {
-    if (hasActiveFilters) {
-      return <EmptyState title="No payments match filters" description="Try a different class/type filter." />;
-    }
-
-    return (
-      <EmptyState
-        title="No payments yet"
-        description="Start by recording your first fee payment."
-        action={<RecordPaymentDialog students={students} />}
-      />
-    );
-  }
-
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-border/80 bg-card/40 p-3 sm:p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <Input
-            placeholder="Search student or phone"
-            value={search}
-            onChange={(event) => {
-              const nextSearch = event.target.value;
-              setSearch(nextSearch);
-              setPage(1);
-              updateFiltersInUrl(nextSearch, classFilter, typeFilter, 1, sortBy, sortDir);
-            }}
-            className="w-full sm:w-[220px] h-11"
-          />
+      {/* 1. Quick Filter Pills Bar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setTypeFilter('all');
+            setClassFilter('all');
+            setPage(1);
+            updateFiltersInUrl(search, 'all', 'all', 1, sortBy, sortDir);
+          }}
+          className={cn(
+            'flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all cursor-pointer',
+            typeFilter === 'all' && classFilter === 'all'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'border border-border/80 bg-card/60 text-muted-foreground hover:bg-accent hover:text-foreground'
+          )}
+        >
+          All Payments
+        </button>
 
-          <div className="w-full sm:w-[170px]">
-            <label className="sr-only" htmlFor="payments-class-filter">
-              Filter payments by class
-            </label>
-            <Select
-              value={classFilter}
-              onValueChange={(value) => {
-                const nextClassFilter = value as 'all' | StudentClass;
-                setClassFilter(nextClassFilter);
+        <button
+          type="button"
+          onClick={() => {
+            setTypeFilter('yearly');
+            setPage(1);
+            updateFiltersInUrl(search, classFilter, 'yearly', 1, sortBy, sortDir);
+          }}
+          className={cn(
+            'flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all cursor-pointer',
+            typeFilter === 'yearly'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'border border-border/80 bg-card/60 text-muted-foreground hover:bg-accent hover:text-foreground'
+          )}
+        >
+          Yearly
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setTypeFilter('half_yearly');
+            setPage(1);
+            updateFiltersInUrl(search, classFilter, 'half_yearly', 1, sortBy, sortDir);
+          }}
+          className={cn(
+            'flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all cursor-pointer',
+            typeFilter === 'half_yearly'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'border border-border/80 bg-card/60 text-muted-foreground hover:bg-accent hover:text-foreground'
+          )}
+        >
+          Half Yearly
+        </button>
+
+        <div className="h-4 w-px bg-border/60 mx-1 hidden sm:block" />
+
+        <button
+          type="button"
+          onClick={() => {
+            const nextClass = classFilter === '9' ? 'all' : '9';
+            setClassFilter(nextClass);
+            setPage(1);
+            updateFiltersInUrl(search, nextClass, typeFilter, 1, sortBy, sortDir);
+          }}
+          className={cn(
+            'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all cursor-pointer',
+            classFilter === '9'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'border border-border/80 bg-card/60 text-muted-foreground hover:bg-accent hover:text-foreground'
+          )}
+        >
+          Class 9
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            const nextClass = classFilter === '10' ? 'all' : '10';
+            setClassFilter(nextClass);
+            setPage(1);
+            updateFiltersInUrl(search, nextClass, typeFilter, 1, sortBy, sortDir);
+          }}
+          className={cn(
+            'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all cursor-pointer',
+            classFilter === '10'
+              ? 'bg-cyan-600 text-white shadow-sm'
+              : 'border border-border/80 bg-card/60 text-muted-foreground hover:bg-accent hover:text-foreground'
+          )}
+        >
+          Class 10
+        </button>
+      </div>
+
+      {/* 2. Elevated Filter & Search Toolbar */}
+      <div className="rounded-xl border border-border/80 bg-card/50 p-3 sm:p-4 shadow-sm backdrop-blur-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          {/* Search Input with Search & Clear icon */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search by student name or phone..."
+              value={search}
+              onChange={(event) => {
+                const nextSearch = event.target.value;
+                setSearch(nextSearch);
                 setPage(1);
-                updateFiltersInUrl(search, nextClassFilter, typeFilter, 1, sortBy, sortDir);
+                updateFiltersInUrl(nextSearch, classFilter, typeFilter, 1, sortBy, sortDir);
               }}
-            >
-              <SelectTrigger id="payments-class-filter" aria-label="Filter payments by class" className="h-11">
-                <SelectValue placeholder="Filter by class" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Classes</SelectItem>
-                <SelectItem value="9">Class 9</SelectItem>
-                <SelectItem value="10">Class 10</SelectItem>
-              </SelectContent>
-            </Select>
+              className="pl-9 pr-8 h-10 w-full bg-background/60"
+            />
+            {search ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setPage(1);
+                  updateFiltersInUrl('', classFilter, typeFilter, 1, sortBy, sortDir);
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded cursor-pointer"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
           </div>
 
-          <div className="w-full sm:w-[170px]">
-            <label className="sr-only" htmlFor="payments-type-filter">
-              Filter payments by type
-            </label>
-            <Select
-              value={typeFilter}
-              onValueChange={(value) => {
-                const nextTypeFilter = value as 'all' | PaymentType;
-                setTypeFilter(nextTypeFilter);
-                setPage(1);
-                updateFiltersInUrl(search, classFilter, nextTypeFilter, 1, sortBy, sortDir);
-              }}
-            >
-              <SelectTrigger id="payments-type-filter" aria-label="Filter payments by payment type" className="h-11">
-                <SelectValue placeholder="Filter by type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="yearly">Yearly</SelectItem>
-                <SelectItem value="half_yearly">Half Yearly</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="w-full sm:w-[160px]">
-            <Select
-              value={sortBy}
-              onValueChange={(value) => {
-                const nextSortBy = value as PaymentsSortBy;
-                setSortBy(nextSortBy);
-                setPage(1);
-                updateFiltersInUrl(search, classFilter, typeFilter, 1, nextSortBy, sortDir);
-              }}
-            >
-              <SelectTrigger aria-label="Sort payments by" className="h-11">
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="payment_date">Payment Date</SelectItem>
-                <SelectItem value="amount">Amount</SelectItem>
-                <SelectItem value="period_end">Period End</SelectItem>
-                <SelectItem value="created_at">Created At</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="w-full sm:w-[140px]">
-            <Select
-              value={sortDir}
-              onValueChange={(value) => {
-                const nextSortDir = value as 'asc' | 'desc';
-                setSortDir(nextSortDir);
-                setPage(1);
-                updateFiltersInUrl(search, classFilter, typeFilter, 1, sortBy, nextSortDir);
-              }}
-            >
-              <SelectTrigger aria-label="Sort order" className="h-11">
-                <SelectValue placeholder="Order" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="desc">Descending</SelectItem>
-                <SelectItem value="asc">Ascending</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Button
-            variant="outline"
-            className="h-11 gap-2"
-            disabled={!payments.length}
-            onClick={() => {
-              const exportRows = payments.map((p) => ({
-                'Receipt No': `REC-${p.id.slice(0, 8).toUpperCase()}`,
-                'Student Name': p.students?.name || '—',
-                'Class': `Class ${p.students?.class || '—'}`,
-                'Phone': p.students?.phone || '—',
-                'Payment Type': p.payment_type === 'yearly' ? 'Yearly' : 'Half Yearly',
-                'Amount (INR)': Number(p.amount || 0),
-                'Payment Date': p.payment_date,
-                'Period Start': p.period_start,
-                'Period End': p.period_end,
-                'Notes': p.notes || ''
-              }));
-              exportToExcel(exportRows, `Payments_${new Date().toISOString().split('T')[0]}`);
-            }}
-          >
-            <Download className="h-4 w-4" aria-hidden="true" />
-            Export
-          </Button>
-
-          <Badge variant="outline">Showing {pageRangeLabel}</Badge>
-          <p className="text-xs text-muted-foreground">Last updated: {formatDateTime(dataUpdatedAt || Date.now())}</p>
-
-          {isFetching ? (
-            <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
-              Updating payments…
-            </p>
-          ) : null}
-
-          {selectedPaymentIds.length ? (
-            <div className="ml-auto flex flex-wrap items-center gap-2 rounded-md border border-border/80 bg-background/60 px-2 py-1">
-              <Badge variant="outline">Selected: {selectedPaymentIds.length}</Badge>
-              <Button variant="outline" size="sm" className="h-11" onClick={clearSelection} disabled={isBulkDeleting}>
-                Clear
-              </Button>
-              <Button variant="destructive" size="sm" className="h-11" onClick={bulkDelete} disabled={isBulkDeleting}>
-                {isBulkDeleting ? 'Deleting...' : 'Delete Selected'}
-              </Button>
+          {/* Right Action Tools: Sort Dropdown, Sort Direction, Export, Bulk Selection */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="w-[155px]">
+              <Select
+                value={sortBy}
+                onValueChange={(value) => {
+                  const nextSortBy = value as PaymentsSortBy;
+                  setSortBy(nextSortBy);
+                  setPage(1);
+                  updateFiltersInUrl(search, classFilter, typeFilter, 1, nextSortBy, sortDir);
+                }}
+              >
+                <SelectTrigger aria-label="Sort payments by" className="h-10 bg-background/60">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="payment_date">Payment Date</SelectItem>
+                  <SelectItem value="amount">Amount</SelectItem>
+                  <SelectItem value="period_end">Period End</SelectItem>
+                  <SelectItem value="created_at">Created At</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          ) : null}
+
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 bg-background/60"
+              title={sortDir === 'asc' ? 'Ascending (Click for Descending)' : 'Descending (Click for Ascending)'}
+              onClick={() => {
+                const nextDir = sortDir === 'asc' ? 'desc' : 'asc';
+                setSortDir(nextDir);
+                setPage(1);
+                updateFiltersInUrl(search, classFilter, typeFilter, 1, sortBy, nextDir);
+              }}
+            >
+              <ArrowUpDown className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="outline"
+              className="h-10 gap-2 bg-background/60"
+              disabled={!payments.length}
+              onClick={() => {
+                const exportRows = payments.map((p) => ({
+                  'Receipt No': `REC-${p.id.slice(0, 8).toUpperCase()}`,
+                  'Student Name': p.students?.name || '—',
+                  'Class': `Class ${p.students?.class || '—'}`,
+                  'Phone': p.students?.phone || '—',
+                  'Payment Type': p.payment_type === 'yearly' ? 'Yearly' : 'Half Yearly',
+                  'Amount (INR)': Number(p.amount || 0),
+                  'Payment Date': p.payment_date,
+                  'Period Start': p.period_start,
+                  'Period End': p.period_end,
+                  'Notes': p.notes || ''
+                }));
+                exportToExcel(exportRows, `Payments_${toISODate()}`);
+              }}
+            >
+              <Download className="h-4 w-4" />
+              <span>Export</span>
+            </Button>
+
+            {selectedPaymentIds.length ? (
+              <div className="flex items-center gap-1.5 rounded-lg border border-border/80 bg-background/80 px-2 py-1">
+                <Badge variant="outline" className="text-xs">
+                  {selectedPaymentIds.length} selected
+                </Badge>
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={clearSelection}>
+                  Clear
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1"
+                  onClick={bulkDelete}
+                  disabled={isBulkDeleting}
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Delete
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Toolbar Sub-bar */}
+        <div className="mt-3 pt-3 border-t border-border/50 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2.5">
+            <span>Showing {pageRangeLabel} payments</span>
+            {isFetching ? (
+              <span className="flex items-center gap-1.5 text-primary font-medium">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                Updating...
+              </span>
+            ) : null}
+          </div>
+
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setClassFilter('all');
+                setTypeFilter('all');
+                setPage(1);
+                updateFiltersInUrl('', 'all', 'all', 1, sortBy, sortDir);
+              }}
+              className="text-primary hover:underline font-medium cursor-pointer"
+            >
+              Reset filters
+            </button>
+          ) : (
+            <span className="text-muted-foreground/70">
+              Last updated: {formatDateTime(dataUpdatedAt || Date.now())}
+            </span>
+          )}
         </div>
       </div>
 
+      {/* 3. Empty State vs Table Display */}
       {!payments.length ? (
-        <EmptyState title="No payments match filters" description="Try a different class/type filter." />
+        hasActiveFilters ? (
+          <EmptyState
+            title="No payments match filters"
+            description="Try clearing search or changing class/payment type filter."
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearch('');
+                  setClassFilter('all');
+                  setTypeFilter('all');
+                  setPage(1);
+                  updateFiltersInUrl('', 'all', 'all', 1, sortBy, sortDir);
+                }}
+              >
+                Clear all filters
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyState
+            title="No payments yet"
+            description="Start by recording your first fee payment."
+            action={<RecordPaymentDialog students={students} />}
+          />
+        )
       ) : (
         <>
+          {/* Mobile Card View */}
           <div className="space-y-3 md:hidden">
             {payments.map((payment) => {
               const studentName = payment.students?.name || 'Unknown student';
+              const initials = getInitials(studentName);
+              const avatarStyle = getAvatarColor(studentName);
+              const receiptNo = `REC-${payment.id.slice(0, 8).toUpperCase()}`;
 
               return (
-                <div key={payment.id} className="rounded-lg border border-border/70 p-4">
+                <div
+                  key={payment.id}
+                  className="rounded-xl border border-border/80 bg-card/60 p-4 shadow-sm backdrop-blur-sm"
+                >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-center gap-3 min-w-0">
                       <input
                         type="checkbox"
                         className={checkboxClassName}
                         checked={selectedIdSet.has(payment.id)}
                         onChange={() => toggleRowSelection(payment.id)}
-                        aria-label={`Select payment for ${studentName} on ${formatDate(payment.payment_date)}`}
+                        aria-label={`Select payment for ${studentName}`}
                       />
-                      <div>
-                        <p className="font-medium">{studentName}</p>
-                        <p className="text-xs text-muted-foreground">Class {payment.students?.class ?? '-'}</p>
+                      <div
+                        className={cn(
+                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold border select-none',
+                          avatarStyle
+                        )}
+                      >
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        {payment.students?.id ? (
+                          <Link
+                            href={`/students/${payment.students.id}`}
+                            className="font-semibold text-foreground hover:text-primary transition-colors truncate block"
+                          >
+                            {studentName}
+                          </Link>
+                        ) : (
+                          <p className="font-semibold text-foreground truncate">{studentName}</p>
+                        )}
+                        <span className="text-xs font-mono text-muted-foreground">{receiptNo}</span>
                       </div>
                     </div>
-                    <Badge variant={payment.payment_type === 'yearly' ? 'default' : 'secondary'}>
+
+                    <p className="font-bold text-base text-foreground tabular-nums">
+                      {formatCurrency(payment.amount)}
+                    </p>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'font-medium text-xs px-2 py-0.5',
+                        payment.students?.class === '9'
+                          ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300'
+                          : 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300'
+                      )}
+                    >
+                      Class {payment.students?.class ?? '-'}
+                    </Badge>
+
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'font-medium text-xs px-2 py-0.5',
+                        payment.payment_type === 'yearly'
+                          ? 'border-primary/40 bg-primary/10 text-primary'
+                          : 'border-sky-500/40 bg-sky-500/10 text-sky-300'
+                      )}
+                    >
                       {payment.payment_type === 'yearly' ? 'Yearly' : 'Half Yearly'}
                     </Badge>
+
+                    <span className="text-muted-foreground ml-auto">{formatDate(payment.payment_date)}</span>
                   </div>
 
-                  <div className="mt-3 grid gap-1 text-sm text-muted-foreground">
-                    <p>Date: {formatDate(payment.payment_date)}</p>
-                    <p>
-                      Period: {formatDate(payment.period_start)} - {formatDate(payment.period_end)}
-                    </p>
-                    <p>
-                      Amount: <span className="font-semibold text-foreground">{formatCurrency(payment.amount)}</span>
-                    </p>
-                  </div>
+                  <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {formatDate(payment.period_start)} – {formatDate(payment.period_end)}
+                    </span>
 
-                  <div className="mt-3 flex justify-end">
-                    <OverflowMenu label={`Actions for ${studentName} payment`}>
-                      <PaymentDetailsSheet
-                        payment={payment}
-                        trigger={
-                          <Button variant="ghost" size="sm" className="w-full justify-start">
-                            View details
-                          </Button>
-                        }
-                      />
+                    <div className="flex items-center gap-1.5">
                       <Button
-                        variant="ghost"
                         size="sm"
-                        className="w-full justify-start"
+                        variant="outline"
+                        className="h-8 px-2.5 text-xs gap-1"
                         onClick={() => printPaymentReceipt(payment)}
                       >
-                        Print receipt
+                        <Printer className="h-3.5 w-3.5" />
+                        <span>Slip</span>
                       </Button>
-                      <RecordPaymentDialog
-                        mode="edit"
-                        payment={payment}
-                        students={students}
-                        payments={payments}
-                        trigger={
-                          <Button variant="ghost" size="sm" className="w-full justify-start">
-                            Edit payment
-                          </Button>
-                        }
-                      />
-                      <DeletePaymentButton
-                        paymentId={payment.id}
-                        trigger={
-                          <Button variant="ghost" size="sm" className="w-full justify-start text-destructive">
-                            Delete payment
-                          </Button>
-                        }
-                      />
-                    </OverflowMenu>
+                      <PaymentDetailsSheet payment={payment} />
+                      <OverflowMenu label={`Actions for ${studentName} payment`}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full justify-start text-xs gap-1.5"
+                          onClick={() => printPaymentReceipt(payment)}
+                        >
+                          <Printer className="h-3.5 w-3.5" />
+                          Print receipt slip
+                        </Button>
+                        <RecordPaymentDialog
+                          mode="edit"
+                          payment={payment}
+                          students={students}
+                          payments={payments}
+                          trigger={
+                            <Button variant="ghost" size="sm" className="w-full justify-start text-xs">
+                              Edit payment
+                            </Button>
+                          }
+                        />
+                        <DeletePaymentButton
+                          paymentId={payment.id}
+                          trigger={
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-start text-xs text-destructive hover:text-destructive"
+                            >
+                              Delete payment
+                            </Button>
+                          }
+                        />
+                      </OverflowMenu>
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          <div className="hidden md:block">
+          {/* Desktop Data Table View */}
+          <div className="hidden md:block rounded-xl border border-border/80 bg-card/60 backdrop-blur-sm shadow-sm overflow-hidden">
             <Table>
-              <TableCaption className="sr-only">Payments history with selection, filtering, and row-level actions.</TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[42px]">
+              <TableCaption className="sr-only">Payments history</TableCaption>
+              <TableHeader className="bg-muted/30">
+                <TableRow className="border-b border-border/70 hover:bg-transparent">
+                  <TableHead className="w-[42px] pl-4">
                     <input
                       ref={selectAllRef}
                       type="checkbox"
@@ -593,86 +773,191 @@ export function PaymentsTable({
                       aria-label="Select all visible payments"
                     />
                   </TableHead>
-                  <TableHead>Student</TableHead>
-                  <TableHead>Class</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Period</TableHead>
-                  <TableHead>Notes</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Student / Receipt
+                  </TableHead>
+                  <TableHead className="py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Class
+                  </TableHead>
+                  <TableHead className="py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Cycle
+                  </TableHead>
+                  <TableHead className="py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Paid Date
+                  </TableHead>
+                  <TableHead className="py-3.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Coverage Period
+                  </TableHead>
+                  <TableHead className="py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Amount
+                  </TableHead>
+                  <TableHead className="py-3.5 pr-4 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Actions
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {payments.map((payment) => {
                   const studentName = payment.students?.name || 'Unknown student';
+                  const initials = getInitials(studentName);
+                  const avatarStyle = getAvatarColor(studentName);
+                  const receiptNo = `REC-${payment.id.slice(0, 8).toUpperCase()}`;
 
                   return (
-                    <TableRow key={payment.id}>
-                      <TableCell>
+                    <TableRow
+                      key={payment.id}
+                      className="border-b border-border/40 hover:bg-muted/20 transition-colors"
+                    >
+                      {/* Checkbox */}
+                      <TableCell className="pl-4 py-3">
                         <input
                           type="checkbox"
                           className={checkboxClassName}
                           checked={selectedIdSet.has(payment.id)}
                           onChange={() => toggleRowSelection(payment.id)}
-                          aria-label={`Select payment for ${studentName} on ${formatDate(payment.payment_date)}`}
+                          aria-label={`Select payment for ${studentName}`}
                         />
                       </TableCell>
-                      <TableCell className="font-medium">{studentName}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">Class {payment.students?.class ?? '-'}</Badge>
+
+                      {/* Student Identity + Receipt Pill */}
+                      <TableCell className="py-3">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={cn(
+                              'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold border select-none',
+                              avatarStyle
+                            )}
+                          >
+                            {initials}
+                          </div>
+                          <div className="min-w-0">
+                            {payment.students?.id ? (
+                              <Link
+                                href={`/students/${payment.students.id}`}
+                                className="font-semibold text-foreground hover:text-primary transition-colors block truncate"
+                              >
+                                {studentName}
+                              </Link>
+                            ) : (
+                              <span className="font-semibold text-foreground block truncate">
+                                {studentName}
+                              </span>
+                            )}
+                            <span className="text-xs font-mono text-muted-foreground/70">
+                              {receiptNo}
+                            </span>
+                          </div>
+                        </div>
                       </TableCell>
-                      <TableCell>
-                        <Badge variant={payment.payment_type === 'yearly' ? 'default' : 'secondary'}>
+
+                      {/* Class Badge */}
+                      <TableCell className="py-3">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'font-medium px-2.5 py-0.5',
+                            payment.students?.class === '9'
+                              ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300'
+                              : 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300'
+                          )}
+                        >
+                          Class {payment.students?.class ?? '-'}
+                        </Badge>
+                      </TableCell>
+
+                      {/* Payment Type */}
+                      <TableCell className="py-3">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'font-medium px-2.5 py-0.5',
+                            payment.payment_type === 'yearly'
+                              ? 'border-primary/40 bg-primary/10 text-primary'
+                              : 'border-sky-500/40 bg-sky-500/10 text-sky-300'
+                          )}
+                        >
                           {payment.payment_type === 'yearly' ? 'Yearly' : 'Half Yearly'}
                         </Badge>
                       </TableCell>
-                      <TableCell>{formatDate(payment.payment_date)}</TableCell>
-                      <TableCell>
-                        {formatDate(payment.period_start)} - {formatDate(payment.period_end)}
+
+                      {/* Payment Date */}
+                      <TableCell className="py-3 text-sm text-muted-foreground">
+                        {formatDate(payment.payment_date)}
                       </TableCell>
-                      <TableCell className="max-w-[220px] truncate text-muted-foreground" title={payment.notes || ''}>
-                        {payment.notes || '—'}
+
+                      {/* Coverage Period */}
+                      <TableCell className="py-3 text-sm text-muted-foreground">
+                        {formatDate(payment.period_start)} – {formatDate(payment.period_end)}
                       </TableCell>
-                      <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(payment.amount)}</TableCell>
-                      <TableCell className="text-right">
-                        <OverflowMenu label={`Actions for ${studentName} payment`}>
-                          <PaymentDetailsSheet
-                            payment={payment}
-                            trigger={
-                              <Button variant="ghost" size="sm" className="w-full justify-start">
-                                View details
-                              </Button>
-                            }
-                          />
+
+                      {/* Amount */}
+                      <TableCell className="py-3 text-right font-bold text-base text-foreground tabular-nums">
+                        {formatCurrency(payment.amount)}
+                      </TableCell>
+
+                      {/* Direct Actions */}
+                      <TableCell className="py-3 pr-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="w-full justify-start"
+                            className="h-8 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
                             onClick={() => printPaymentReceipt(payment)}
+                            title="Print receipt slip"
                           >
-                            Print receipt
+                            <Printer className="h-3.5 w-3.5" />
+                            <span>Slip</span>
                           </Button>
-                          <RecordPaymentDialog
-                            mode="edit"
+
+                          <PaymentDetailsSheet
                             payment={payment}
-                            students={students}
-                            payments={payments}
                             trigger={
-                              <Button variant="ghost" size="sm" className="w-full justify-start">
-                                Edit payment
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-2 text-xs gap-1.5 text-muted-foreground hover:text-foreground"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                                <span>View</span>
                               </Button>
                             }
                           />
-                          <DeletePaymentButton
-                            paymentId={payment.id}
-                            trigger={
-                              <Button variant="ghost" size="sm" className="w-full justify-start text-destructive">
-                                Delete payment
-                              </Button>
-                            }
-                          />
-                        </OverflowMenu>
+
+                          <OverflowMenu label={`Actions for ${studentName} payment`}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="w-full justify-start text-xs gap-1.5"
+                              onClick={() => printPaymentReceipt(payment)}
+                            >
+                              <Printer className="h-3.5 w-3.5" />
+                              Print receipt
+                            </Button>
+                            <RecordPaymentDialog
+                              mode="edit"
+                              payment={payment}
+                              students={students}
+                              payments={payments}
+                              trigger={
+                                <Button variant="ghost" size="sm" className="w-full justify-start text-xs">
+                                  Edit payment
+                                </Button>
+                              }
+                            />
+                            <DeletePaymentButton
+                              paymentId={payment.id}
+                              trigger={
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-full justify-start text-xs text-destructive hover:text-destructive"
+                                >
+                                  Delete payment
+                                </Button>
+                              }
+                            />
+                          </OverflowMenu>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -681,14 +966,16 @@ export function PaymentsTable({
             </Table>
           </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
+          {/* 4. Bottom Pagination */}
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <p className="text-xs text-muted-foreground">
               Page {page} of {totalPages}
             </p>
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
+                className="h-9 px-3 text-xs"
                 disabled={page <= 1 || isFetching}
                 onClick={() => {
                   const nextPage = Math.max(1, page - 1);
@@ -701,6 +988,7 @@ export function PaymentsTable({
               <Button
                 variant="outline"
                 size="sm"
+                className="h-9 px-3 text-xs"
                 disabled={page >= totalPages || isFetching}
                 onClick={() => {
                   const nextPage = Math.min(totalPages, page + 1);
@@ -715,24 +1003,25 @@ export function PaymentsTable({
         </>
       )}
 
-      <Dialog
-        open={bulkDeleteDialogOpen}
-        onOpenChange={(nextOpen) => {
-          if (!isBulkDeleting) setBulkDeleteDialogOpen(nextOpen);
-        }}
-      >
+      {/* Bulk Delete Confirm Dialog */}
+      <Dialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete selected payments?</DialogTitle>
             <DialogDescription>
-              You are about to permanently delete {selectedPaymentIds.length} payment record(s). This action cannot be undone.
+              This will permanently delete {selectedPaymentIds.length} selected payment record(s).
             </DialogDescription>
           </DialogHeader>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkDeleteDialogOpen(false)} disabled={isBulkDeleting}>
+            <Button
+              variant="outline"
+              onClick={() => setBulkDeleteDialogOpen(false)}
+              disabled={isBulkDeleting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmBulkDelete} disabled={isBulkDeleting || !selectedPaymentIds.length}>
+            <Button variant="destructive" onClick={confirmBulkDelete} disabled={isBulkDeleting}>
               {isBulkDeleting ? 'Deleting...' : 'Delete Selected'}
             </Button>
           </DialogFooter>
