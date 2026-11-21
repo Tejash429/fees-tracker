@@ -169,10 +169,30 @@ export function RecordPaymentDialog({
   }, [canUseYearlyForSelectedStudent, paymentType]);
 
   useEffect(() => {
-    if (!manualPeriodEnd) {
-      setPeriodEnd(calculatePeriodEnd(periodStart, paymentType));
+    if (!studentId) return;
+
+    if (mode === 'edit' && payment) {
+      setPeriodStart(payment.period_start);
+      setPeriodEnd(payment.period_end);
+      return;
     }
-  }, [periodStart, paymentType, manualPeriodEnd]);
+
+    const studentPayments = livePayments
+      .filter((p) => p.student_id === studentId)
+      .sort((a, b) => new Date(b.period_end).getTime() - new Date(a.period_end).getTime());
+
+    let computedStart = paymentDate || toISODate();
+    if (studentPayments.length > 0 && studentPayments[0].period_end) {
+      const prevEnd = new Date(studentPayments[0].period_end);
+      if (!Number.isNaN(prevEnd.getTime())) {
+        prevEnd.setDate(prevEnd.getDate() + 1);
+        computedStart = prevEnd.toISOString().split('T')[0];
+      }
+    }
+
+    setPeriodStart(computedStart);
+    setPeriodEnd(calculatePeriodEnd(computedStart, paymentType));
+  }, [studentId, paymentType, paymentDate, livePayments, mode, payment]);
 
   useEffect(() => {
     if (!open) {
@@ -400,50 +420,7 @@ export function RecordPaymentDialog({
             ) : null}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="payment-period-start">Period Start</Label>
-            <Input
-              id="payment-period-start"
-              type="date"
-              value={periodStart}
-              onChange={(event) => {
-                setPeriodStart(event.target.value);
-                setErrors((prev) => ({ ...prev, periodStart: undefined, periodEnd: undefined, form: undefined }));
-              }}
-              className="h-11"
-              aria-invalid={Boolean(errors.periodStart)}
-              aria-describedby={errors.periodStart ? 'payment-period-start-error' : undefined}
-            />
-            {errors.periodStart ? (
-              <p id="payment-period-start-error" role="alert" className="text-xs text-destructive">
-                {errors.periodStart}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="payment-period-end">Period End</Label>
-            <Input
-              id="payment-period-end"
-              type="date"
-              value={periodEnd}
-              onChange={(event) => {
-                setManualPeriodEnd(true);
-                setPeriodEnd(event.target.value);
-                setErrors((prev) => ({ ...prev, periodEnd: undefined, form: undefined }));
-              }}
-              className="h-11"
-              aria-invalid={Boolean(errors.periodEnd)}
-              aria-describedby={errors.periodEnd ? 'payment-period-end-error' : undefined}
-            />
-            {errors.periodEnd ? (
-              <p id="payment-period-end-error" role="alert" className="text-xs text-destructive">
-                {errors.periodEnd}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
+          <div className="space-y-2 md:col-span-2">
             <Label htmlFor="payment-date">Payment Date</Label>
             <Input
               id="payment-date"

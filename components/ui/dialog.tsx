@@ -31,7 +31,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed inset-0 z-50 grid h-[100dvh] w-screen grid-rows-[auto_1fr] gap-4 overflow-y-auto border border-border bg-card p-4 shadow-lg duration-200 sm:left-[50%] sm:top-[50%] sm:h-auto sm:w-full sm:max-w-lg sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-lg sm:p-6',
+        'fixed left-[50%] top-[50%] z-50 flex flex-col w-[calc(100vw-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] max-h-[90dvh] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-2xl duration-200 focus:outline-none',
         className
       )}
       {...props}
@@ -47,14 +47,14 @@ const DialogContent = React.forwardRef<
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col space-y-1.5 text-center sm:text-left', className)} {...props} />
+  <div className={cn('flex flex-col space-y-1.5 text-center sm:text-left mb-4', className)} {...props} />
 );
 DialogHeader.displayName = 'DialogHeader';
 
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      'sticky bottom-0 -mx-4 flex flex-col-reverse border-t border-border/70 bg-card px-4 pb-1 pt-3 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:flex-row sm:justify-end sm:space-x-2',
+      'mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-2',
       className
     )}
     {...props}

@@ -33,9 +33,9 @@ const SheetContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed z-50 flex flex-col gap-4 overflow-y-auto border border-border bg-card p-4 shadow-lg transition ease-in-out sm:p-6',
-        side === 'right' && 'inset-y-0 right-0 h-[100dvh] w-screen border-l sm:w-full sm:max-w-lg',
-        side === 'left' && 'inset-y-0 left-0 h-[100dvh] w-screen border-r sm:w-full sm:max-w-lg',
+        'fixed z-50 flex flex-col gap-4 overflow-y-auto border border-border bg-card p-6 shadow-2xl transition ease-in-out focus:outline-none',
+        side === 'right' && 'inset-y-0 right-0 h-full w-full border-l sm:max-w-lg',
+        side === 'left' && 'inset-y-0 left-0 h-full w-full border-r sm:max-w-lg',
         side === 'top' && 'inset-x-0 top-0 border-b',
         side === 'bottom' && 'inset-x-0 bottom-0 border-t',
         className
@@ -60,7 +60,7 @@ SheetHeader.displayName = 'SheetHeader';
 const SheetFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      'sticky bottom-0 -mx-4 mt-auto flex flex-col-reverse border-t border-border/70 bg-card px-4 pb-1 pt-3 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:flex-row sm:justify-end sm:space-x-2',
+      'mt-auto flex flex-col-reverse gap-2 pt-4 sm:flex-row sm:justify-end sm:gap-2',
       className
     )}
     {...props}
