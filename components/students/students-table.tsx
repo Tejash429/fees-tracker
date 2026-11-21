@@ -144,6 +144,13 @@ export function StudentsTable({
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   };
 
+  const isInitialParams =
+    page === initialPage &&
+    classFilter === initialClassFilter &&
+    search === initialSearch &&
+    sortBy === initialSortBy &&
+    sortDir === initialSortDir;
+
   const { data, isPending, isFetching, dataUpdatedAt } = useQuery({
     queryKey: queryKeys.studentsTable({
       search,
@@ -162,7 +169,8 @@ export function StudentsTable({
         sortBy,
         sortDir
       }),
-    initialData
+    initialData: isInitialParams ? initialData : undefined,
+    placeholderData: (previousData) => previousData
   });
 
   const { data: liveAllStudents = allStudents } = useQuery({
@@ -171,9 +179,9 @@ export function StudentsTable({
     initialData: allStudents
   });
 
-  const students = data.rows;
-  const total = data.total;
-  const totalPages = Math.max(1, data.totalPages);
+  const students = data?.rows ?? initialData.rows;
+  const total = data?.total ?? initialData.total;
+  const totalPages = Math.max(1, data?.totalPages ?? initialData.totalPages);
 
   const counts = useMemo(() => {
     const totalCount = liveAllStudents.length;

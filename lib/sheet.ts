@@ -16,31 +16,90 @@ export interface NormalizedImportRow {
 }
 
 const HEADER_MAP = {
-  name: ['name', 'student_name', 'student', 'full_name'],
-  class: ['class', 'grade', 'std', 'standard'],
-  parent_name: ['parent_name', 'parent', 'father_name', 'mother_name', 'guardian_name'],
-  phone: ['phone', 'mobile', 'contact', 'phone_number', 'parent_phone'],
-  enrollment_date: ['enrollment_date', 'enrolled_on', 'joining_date', 'date']
+  name: [
+    'name',
+    'student_name',
+    'student',
+    'full_name',
+    'students',
+    'student_names',
+    'names',
+    'candidate_name',
+    'student_fullname',
+    'first_name'
+  ],
+  class: [
+    'class',
+    'grade',
+    'std',
+    'standard',
+    'classroom',
+    'batch',
+    'section'
+  ],
+  parent_name: [
+    'parent_name',
+    'parent',
+    'father_name',
+    'mother_name',
+    'guardian_name'
+  ],
+  phone: [
+    'phone',
+    'number',
+    'numbers',
+    'phone_number',
+    'phone_no',
+    'phoneno',
+    'mobile',
+    'mobile_number',
+    'mobile_no',
+    'mobileno',
+    'contact',
+    'contact_number',
+    'contact_no',
+    'contactno',
+    'parent_phone',
+    'parent_mobile',
+    'student_phone',
+    'student_mobile',
+    'cell',
+    'cell_no',
+    'tel',
+    'telephone',
+    'whatsapp',
+    'wa',
+    'no'
+  ],
+  enrollment_date: [
+    'enrollment_date',
+    'enrolled_on',
+    'joining_date',
+    'admission_date',
+    'date'
+  ]
 };
 
 function normalizeHeader(header: string) {
-  return header.toLowerCase().trim().replace(/\s+/g, '_');
+  return header.toLowerCase().trim().replace(/[\s._-]+/g, '_');
 }
 
 function pickValue(raw: RawImportRow, candidates: string[]) {
   const normalizedEntries = Object.entries(raw).map(([key, value]) => [normalizeHeader(key), value]);
   for (const candidate of candidates) {
     const found = normalizedEntries.find(([key]) => key === candidate);
-    if (found) return found[1];
+    if (found && found[1] !== undefined && found[1] !== null && String(found[1]).trim() !== '') {
+      return found[1];
+    }
   }
   return undefined;
 }
 
-function normalizeClass(value: unknown): StudentClass | '' {
+function normalizeClass(value: unknown, defaultClass: StudentClass = '10'): StudentClass {
   const text = String(value ?? '').trim();
-  if (text === '9' || text.toLowerCase() === 'class 9') return '9';
-  if (text === '10' || text.toLowerCase() === 'class 10') return '10';
-  return '';
+  if (text === '9' || text.toLowerCase() === 'class 9' || text.toLowerCase() === '9th') return '9';
+  if (text === '10' || text.toLowerCase() === 'class 10' || text.toLowerCase() === '10th') return '10';
+  return defaultClass;
 }
 
 function normalizeDate(value: unknown) {
@@ -59,26 +118,61 @@ function normalizeDate(value: unknown) {
   const parsed = new Date(text);
   if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];
 
-  return text;
+  return toISODate();
 }
 
-export function normalizeImportRows(rawRows: RawImportRow[]) {
+/**
+ * Checks if a string looks like a telephone / mobile number.
+ */
+function isPhoneNumberLike(val: unknown): boolean {
+  if (typeof val === 'number') {
+    const numStr = String(val);
+    return numStr.length >= 7 && numStr.length <= 15;
+  }
+  if (typeof val !== 'string') return false;
+  const digits = val.replace(/\D/g, '');
+  return digits.length >= 7 && digits.length <= 15;
+}
+
+export function normalizeImportRows(rawRows: RawImportRow[], defaultClass: StudentClass = '10') {
   return rawRows.map((row, index) => {
+    let name = String(pickValue(row, HEADER_MAP.name) ?? '').trim();
+    let phone = String(pickValue(row, HEADER_MAP.phone) ?? '').trim();
+    const rawClass = pickValue(row, HEADER_MAP.class);
+    const parentName = String(pickValue(row, HEADER_MAP.parent_name) ?? '').trim();
+    const enrollmentDate = normalizeDate(pickValue(row, HEADER_MAP.enrollment_date));
+
+    // Fallback heuristic: If name or phone wasn't detected by header, inspect row values
+    if (!name || !phone) {
+      const entries = Object.entries(row).filter(
+        ([_, v]) => v !== undefined && v !== null && String(v).trim() !== ''
+      );
+
+      for (const [_, val] of entries) {
+        if (!phone && isPhoneNumberLike(val)) {
+          phone = String(val).trim();
+        } else if (!name && typeof val === 'string' && val.trim().length > 1 && !isPhoneNumberLike(val)) {
+          name = val.trim();
+        }
+      }
+    }
+
+    // Default class to 10 if missing
+    const studentClass = normalizeClass(rawClass, defaultClass);
+
     const normalized: NormalizedImportRow = {
       rowNumber: index + 1,
-      name: String(pickValue(row, HEADER_MAP.name) ?? '').trim(),
-      class: normalizeClass(pickValue(row, HEADER_MAP.class)),
-      parent_name: String(pickValue(row, HEADER_MAP.parent_name) ?? '').trim(),
-      phone: String(pickValue(row, HEADER_MAP.phone) ?? '').trim(),
-      enrollment_date: normalizeDate(pickValue(row, HEADER_MAP.enrollment_date)),
+      name,
+      class: studentClass,
+      parent_name: parentName,
+      phone,
+      enrollment_date: enrollmentDate,
       errors: []
     };
 
     if (!normalized.name) normalized.errors.push('Name is required');
-    if (!normalized.class) normalized.errors.push('Class must be 9 or 10');
-    if (normalized.enrollment_date) {
-      const d = new Date(normalized.enrollment_date);
-      if (Number.isNaN(d.getTime())) normalized.errors.push('Invalid enrollment_date');
+    if (!normalized.class || (normalized.class !== '9' && normalized.class !== '10')) {
+      normalized.errors.push('Class must be 9 or 10');
     }
 
     return normalized;

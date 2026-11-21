@@ -192,6 +192,14 @@ export function PaymentsTable({
 
   const selectAllRef = useRef<HTMLInputElement>(null);
 
+  const isInitialParams =
+    page === initialPage &&
+    classFilter === initialClassFilter &&
+    typeFilter === initialTypeFilter &&
+    search === initialSearch &&
+    sortBy === initialSortBy &&
+    sortDir === initialSortDir;
+
   const { data, isPending: isPendingPayments, isFetching: isFetchingPayments, dataUpdatedAt } = useQuery({
     queryKey: queryKeys.paymentsTable({
       search,
@@ -212,7 +220,8 @@ export function PaymentsTable({
         sortBy,
         sortDir
       }),
-    initialData
+    initialData: isInitialParams ? initialData : undefined,
+    placeholderData: (previousData) => previousData
   });
 
   const { data: students = initialStudents, isPending: isPendingStudents, isFetching: isFetchingStudents } = useQuery(
@@ -223,9 +232,9 @@ export function PaymentsTable({
     }
   );
 
-  const payments = data.rows;
-  const total = data.total;
-  const totalPages = Math.max(1, data.totalPages);
+  const payments = data?.rows ?? initialData.rows;
+  const total = data?.total ?? initialData.total;
+  const totalPages = Math.max(1, data?.totalPages ?? initialData.totalPages);
   const isPending = isPendingPayments || isPendingStudents;
   const isFetching = isFetchingPayments || isFetchingStudents;
 

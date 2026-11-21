@@ -44,7 +44,9 @@ interface EditableImportRow {
 function validateEditableRow(row: EditableImportRow) {
   const errors: string[] = [];
   if (!row.name.trim()) errors.push('Name required');
-  if (row.class !== '9' && row.class !== '10') errors.push('Class must be 9/10');
+  if (!row.class || (row.class !== '9' && row.class !== '10')) {
+    errors.push('Class must be 9/10');
+  }
   if (row.enrollment_date) {
     const d = new Date(row.enrollment_date);
     if (Number.isNaN(d.getTime())) errors.push('Invalid date');
@@ -60,10 +62,11 @@ async function parseCsvText(text: string): Promise<RawImportRow[]> {
     Papa.parse<RawImportRow>(text, {
       header: true,
       skipEmptyLines: true,
-      complete(results) {
+      transformHeader: (header) => header.trim(),
+      complete: (results) => {
         resolve(results.data || []);
       },
-      error(error: Error) {
+      error: (error: Error) => {
         reject(error);
       }
     });
@@ -71,10 +74,14 @@ async function parseCsvText(text: string): Promise<RawImportRow[]> {
 }
 
 async function fetchRowsFromUrl(url: string) {
+  const normalizedUrl = normalizeSheetUrl(url);
+
   const response = await fetch('/api/sheet-fetch', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: normalizeSheetUrl(url) })
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ sheetUrl: normalizedUrl })
   });
 
   if (!response.ok) {
@@ -86,7 +93,7 @@ async function fetchRowsFromUrl(url: string) {
   return parseCsvText(payload.csvText as string);
 }
 
-async function parseUploadedFile(file: File) {
+async function parseUploadedFile(file: File): Promise<RawImportRow[]> {
   const extension = file.name.split('.').pop()?.toLowerCase();
 
   if (extension === 'csv') {
@@ -101,7 +108,38 @@ async function parseUploadedFile(file: File) {
     const workbook = XLSX.read(buffer, { type: 'array' });
     const firstSheet = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheet];
-    return XLSX.utils.sheet_to_json<RawImportRow>(worksheet, { defval: '' });
+
+    // Read as 2D array first to check if first row contains column headers or data
+    const rawArrays = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, defval: '' });
+    if (!rawArrays.length) return [];
+
+    const nonEmptyRows = rawArrays.filter((r) => Array.isArray(r) && r.some((c) => String(c).trim() !== ''));
+    if (!nonEmptyRows.length) return [];
+
+    const firstRow = nonEmptyRows[0];
+    const firstRowStr = firstRow.map((c) => String(c).toLowerCase().trim());
+
+    // Check if the first row looks like headers (contains words like name, student, phone, mobile, etc.)
+    const isHeaderRow = firstRowStr.some((col) =>
+      ['name', 'student', 'phone', 'number', 'mobile', 'contact', 'class', 'grade', 'std'].some((h) =>
+        col.includes(h)
+      )
+    );
+
+    if (isHeaderRow) {
+      return XLSX.utils.sheet_to_json<RawImportRow>(worksheet, { defval: '' });
+    } else {
+      // Headerless file: row 0 is already student data (e.g. col 0 is Name, col 1 is Phone)
+      return nonEmptyRows.map((rowArr) => {
+        const obj: RawImportRow = {};
+        rowArr.forEach((val, idx) => {
+          if (idx === 0) obj['name'] = val;
+          else if (idx === 1) obj['phone'] = val;
+          else obj[`col_${idx}`] = val;
+        });
+        return obj;
+      });
+    }
   }
 
   throw new Error('Unsupported file. Upload CSV or XLSX.');
@@ -110,9 +148,10 @@ async function parseUploadedFile(file: File) {
 export function StudentImportDialog({ onImported }: { onImported?: () => void }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<'url' | 'file'>('url');
+  const [mode, setMode] = useState<'url' | 'file'>('file');
   const [sheetUrl, setSheetUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [defaultClass, setDefaultClass] = useState<StudentClass>('10');
   const [rows, setRows] = useState<EditableImportRow[]>([]);
   const [report, setReport] = useState<ImportReport | null>(null);
 
@@ -145,10 +184,10 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
       {
         rowNumber: (prev[prev.length - 1]?.rowNumber || 0) + 1,
         name: '',
-        class: '',
+        class: defaultClass,
         phone: '',
         enrollment_date: toISODate(),
-        errors: ['Name required', 'Class must be 9/10']
+        errors: ['Name required']
       }
     ]);
   };
@@ -173,14 +212,14 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
           return;
         }
 
-        const normalized = normalizeImportRows(rawRows).map((row) => ({
+        const normalized = normalizeImportRows(rawRows, defaultClass).map((row) => ({
           ...row,
           errors: validateEditableRow(row)
         }));
 
         setRows(normalized);
         setReport(null);
-        toast.success(`Loaded ${normalized.length} row(s) into preview`);
+        toast.success(`Loaded ${normalized.length} student row(s) into preview`);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Failed to parse sheet');
       }
@@ -197,7 +236,7 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
       const payload = rows.map((row) => ({
         rowNumber: row.rowNumber,
         name: row.name,
-        class: row.class,
+        class: row.class || defaultClass,
         parent_name: row.parent_name,
         phone: row.phone,
         enrollment_date: row.enrollment_date
@@ -217,97 +256,121 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
         queryClient.invalidateQueries({ queryKey: queryKeys.students }),
         queryClient.invalidateQueries({ queryKey: queryKeys.studentsTableRoot }),
         queryClient.invalidateQueries({ queryKey: queryKeys.pending }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.payments }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.paymentsTableRoot })
       ]);
 
-      toast.success(result.message || 'Import completed');
-      onImported?.();
+      toast.success(
+        `Import complete: ${result.data?.inserted || 0} added, ${result.data?.skippedDuplicates || 0} duplicates skipped.`
+      );
+
+      if (onImported) onImported();
+      if (!result.data?.failed && !result.data?.skippedRows.length) {
+        setRows([]);
+        setFile(null);
+        setSheetUrl('');
+      }
     });
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) {
-          setSheetUrl('');
-          setFile(null);
-          setRows([]);
-          setReport(null);
-          setMode('url');
-        }
-      }}
-    >
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="secondary" className="gap-2">
+        <Button variant="outline" className="gap-2">
           <UploadCloud className="h-4 w-4" />
-          Import Students
+          Import
         </Button>
       </DialogTrigger>
 
-      <DialogContent className="max-w-6xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Import Students</DialogTitle>
           <DialogDescription>
-            Import via Google Sheet URL or upload CSV/XLSX. Review and fix rows before final import.
+            Upload your CSV/XLSX file with student names and phone numbers. If your file does not contain a class column, they will automatically be assigned to the selected default class.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="grid gap-4 rounded-md border border-border p-4 md:grid-cols-3">
+          <div className="grid gap-4 rounded-xl border border-border/70 bg-card/40 p-4 sm:grid-cols-3">
             <div className="space-y-2">
               <Label>Source Type</Label>
               <Select value={mode} onValueChange={(value) => setMode(value as 'url' | 'file')}>
-                <SelectTrigger>
+                <SelectTrigger className="h-10">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="file">Upload CSV / XLSX</SelectItem>
                   <SelectItem value="url">Google Sheet URL</SelectItem>
-                  <SelectItem value="file">Upload CSV/XLSX</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Default Class</Label>
+              <Select
+                value={defaultClass}
+                onValueChange={(value) => {
+                  const nextCls = value as StudentClass;
+                  setDefaultClass(nextCls);
+                  setRows((prev) =>
+                    prev.map((r) => {
+                      const updated = { ...r, class: nextCls };
+                      return { ...updated, errors: validateEditableRow(updated) };
+                    })
+                  );
+                }}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Default Class" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">Class 10 (Default)</SelectItem>
+                  <SelectItem value="9">Class 9</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             {mode === 'url' ? (
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2">
                 <Label>Sheet URL</Label>
-                <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="flex gap-2">
                   <Input
                     placeholder="Paste Google Sheet link"
                     value={sheetUrl}
                     onChange={(event) => setSheetUrl(event.target.value)}
+                    className="h-10"
                   />
                   <Button
                     type="button"
                     variant="outline"
                     onClick={parseSource}
                     disabled={isParsing || !sheetUrl.trim()}
-                    className="gap-2"
+                    className="h-10 gap-2 shrink-0"
                   >
                     <Link2 className="h-4 w-4" />
                     {isParsing ? 'Loading...' : 'Load'}
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">Only allowlisted hosts can be fetched for security.</p>
               </div>
             ) : (
-              <div className="space-y-2 md:col-span-2">
-                <Label>Upload file</Label>
-                <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="space-y-2">
+                <Label>Upload file (.xlsx / .csv)</Label>
+                <div className="flex gap-2">
                   <Input
                     type="file"
                     accept=".csv,.xlsx,.xls"
                     onChange={(event: ChangeEvent<HTMLInputElement>) => {
                       setFile(event.target.files?.[0] || null);
                     }}
+                    className="h-10 text-xs"
                   />
                   <Button
                     type="button"
                     variant="outline"
                     onClick={parseSource}
                     disabled={isParsing || !file}
-                    className="gap-2"
+                    className="h-10 gap-2 shrink-0"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
                     {isParsing ? 'Loading...' : 'Load'}
@@ -322,7 +385,12 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-sm">
                   <Badge variant="outline">Rows: {rows.length}</Badge>
-                  <Badge variant={invalidCount ? 'destructive' : 'secondary'}>Invalid: {invalidCount}</Badge>
+                  <Badge variant={invalidCount ? 'destructive' : 'secondary'}>
+                    {invalidCount ? `Invalid: ${invalidCount}` : 'All Valid'}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    Assigned to Class {defaultClass}
+                  </span>
                 </div>
 
                 <Button type="button" variant="outline" size="sm" onClick={addRow} className="gap-2">
@@ -331,107 +399,42 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
                 </Button>
               </div>
 
-              <div className="space-y-3 md:hidden">
-                {rows.map((row) => (
-                  <div key={row.rowNumber} className="space-y-3 rounded-lg border border-border/70 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium">Row {row.rowNumber}</p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeRow(row.rowNumber)}
-                        className="h-10"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">Remove row {row.rowNumber}</span>
-                      </Button>
-                    </div>
-
-                    <div className="grid gap-3">
-                      <Input
-                        placeholder="Student name"
-                        value={row.name ?? ''}
-                        onChange={(event) => updateRow(row.rowNumber, 'name', event.target.value)}
-                      />
-
-                      <Select
-                        value={row.class || 'empty'}
-                        onValueChange={(value) =>
-                          updateRow(row.rowNumber, 'class', value === 'empty' ? '' : (value as StudentClass))
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select class" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="empty">Select class</SelectItem>
-                          <SelectItem value="9">Class 9</SelectItem>
-                          <SelectItem value="10">Class 10</SelectItem>
-                        </SelectContent>
-                      </Select>
-
-                      <Input
-                        placeholder="Phone"
-                        value={row.phone ?? ''}
-                        onChange={(event) => updateRow(row.rowNumber, 'phone', event.target.value)}
-                      />
-
-                      <Input
-                        type="date"
-                        value={row.enrollment_date ?? ''}
-                        onChange={(event) => updateRow(row.rowNumber, 'enrollment_date', event.target.value)}
-                      />
-                    </div>
-
-                    {row.errors.length ? (
-                      <Badge variant="destructive" className="max-w-full whitespace-normal leading-4">
-                        {row.errors.join(', ')}
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary">Ready</Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <div className="hidden rounded-md border border-border md:block">
+              <div className="max-h-72 overflow-auto rounded-xl border border-border/70">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Class</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Enrollment Date</TableHead>
-                      <TableHead>Errors</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
+                    <TableRow className="bg-muted/40">
+                      <TableHead className="w-12">#</TableHead>
+                      <TableHead className="min-w-[180px]">Name *</TableHead>
+                      <TableHead className="w-28">Class *</TableHead>
+                      <TableHead className="min-w-[150px]">Phone</TableHead>
+                      <TableHead className="min-w-[150px]">Enrollment Date</TableHead>
+                      <TableHead className="min-w-[120px]">Status</TableHead>
+                      <TableHead className="w-16 text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {rows.map((row) => (
                       <TableRow key={row.rowNumber}>
-                        <TableCell className="text-muted-foreground">{row.rowNumber}</TableCell>
+                        <TableCell>{row.rowNumber}</TableCell>
                         <TableCell>
                           <Input
                             value={row.name ?? ''}
                             onChange={(event) => updateRow(row.rowNumber, 'name', event.target.value)}
+                            placeholder="Student name"
+                            className="h-8 text-xs"
                           />
                         </TableCell>
                         <TableCell>
                           <Select
-                            value={row.class || 'empty'}
-                            onValueChange={(value) =>
-                              updateRow(row.rowNumber, 'class', value === 'empty' ? '' : (value as StudentClass))
-                            }
+                            value={row.class || defaultClass}
+                            onValueChange={(value) => updateRow(row.rowNumber, 'class', value as StudentClass)}
                           >
-                            <SelectTrigger>
+                            <SelectTrigger className="h-8 text-xs">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="empty">Select</SelectItem>
-                              <SelectItem value="9">9</SelectItem>
-                              <SelectItem value="10">10</SelectItem>
+                              <SelectItem value="10">Class 10</SelectItem>
+                              <SelectItem value="9">Class 9</SelectItem>
                             </SelectContent>
                           </Select>
                         </TableCell>
@@ -439,6 +442,8 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
                           <Input
                             value={row.phone ?? ''}
                             onChange={(event) => updateRow(row.rowNumber, 'phone', event.target.value)}
+                            placeholder="Phone number"
+                            className="h-8 text-xs"
                           />
                         </TableCell>
                         <TableCell>
@@ -446,15 +451,18 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
                             type="date"
                             value={row.enrollment_date ?? ''}
                             onChange={(event) => updateRow(row.rowNumber, 'enrollment_date', event.target.value)}
+                            className="h-8 text-xs"
                           />
                         </TableCell>
                         <TableCell>
                           {row.errors.length ? (
-                            <Badge variant="destructive" className="max-w-[220px] whitespace-normal leading-4">
+                            <Badge variant="destructive" className="text-[10px]">
                               {row.errors.join(', ')}
                             </Badge>
                           ) : (
-                            <Badge variant="secondary">Ready</Badge>
+                            <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30">
+                              Valid
+                            </Badge>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
@@ -463,8 +471,9 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
                             size="sm"
                             variant="ghost"
                             onClick={() => removeRow(row.rowNumber)}
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -476,12 +485,14 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
           ) : null}
 
           {report ? (
-            <div className="space-y-3 rounded-md border border-border bg-muted/20 p-4">
-              <p className="font-medium">Import Report</p>
+            <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-4">
+              <p className="font-medium text-sm">Import Report</p>
               <div className="flex flex-wrap gap-2 text-sm">
                 <Badge variant="secondary">Inserted: {report.inserted}</Badge>
                 <Badge variant="outline">Skipped duplicates: {report.skippedDuplicates}</Badge>
-                <Badge variant={report.failed > 0 ? 'destructive' : 'outline'}>Failed: {report.failed}</Badge>
+                <Badge variant={report.failed > 0 ? 'destructive' : 'outline'}>
+                  Failed: {report.failed}
+                </Badge>
               </div>
 
               {report.skippedRows.length ? (
@@ -509,12 +520,12 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
           ) : null}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="mt-4">
           <Button variant="outline" onClick={() => setOpen(false)}>
             Close
           </Button>
           <Button onClick={importRows} disabled={isImporting || !rows.length || invalidCount > 0}>
-            {isImporting ? 'Importing...' : 'Import Valid Rows'}
+            {isImporting ? 'Importing...' : `Import ${rows.length} Student${rows.length === 1 ? '' : 's'}`}
           </Button>
         </DialogFooter>
       </DialogContent>

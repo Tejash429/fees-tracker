@@ -73,6 +73,29 @@ export async function getStudentsTableData(options: GetStudentsTableOptions = {}
     .range(from, to);
 
   if (error) {
+    if (error.message.includes('Requested range not satisfiable') || (error as { code?: string }).code === 'PGRST103') {
+      const fallbackQuery = supabase
+        .from('students')
+        .select('*', { count: 'exact' });
+      if (classFilter === '9' || classFilter === '10') fallbackQuery.eq('class', classFilter);
+      if (search) fallbackQuery.or(`name.ilike.%${search}%,phone.ilike.%${search}%`);
+      const fallback = await fallbackQuery
+        .order(sortBy, { ascending: sortDir === 'asc' })
+        .range(0, pageSize - 1);
+
+      const total = fallback.count || 0;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+      return {
+        rows: (fallback.data || []) as Student[],
+        total,
+        page: 1,
+        pageSize,
+        totalPages,
+        sortBy,
+        sortDir
+      };
+    }
     throw new Error(error.message);
   }
 
@@ -211,6 +234,30 @@ export async function getPaymentsTableData(options: GetPaymentsTableOptions = {}
     .range(from, to);
 
   if (error) {
+    if (error.message.includes('Requested range not satisfiable') || (error as { code?: string }).code === 'PGRST103') {
+      const fallbackQuery = supabase
+        .from('payments')
+        .select('*, students!inner(id, name, class, phone)', { count: 'exact' });
+      if (classFilter === '9' || classFilter === '10') fallbackQuery.eq('students.class', classFilter);
+      if (typeFilter === 'yearly' || typeFilter === 'half_yearly') fallbackQuery.eq('payment_type', typeFilter);
+      if (search) fallbackQuery.or(`name.ilike.%${search}%,phone.ilike.%${search}%`, { foreignTable: 'students' });
+      const fallback = await fallbackQuery
+        .order(sortBy, { ascending: sortDir === 'asc' })
+        .range(0, pageSize - 1);
+
+      const total = fallback.count || 0;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+      return {
+        rows: (fallback.data || []) as PaymentWithStudent[],
+        total,
+        page: 1,
+        pageSize,
+        totalPages,
+        sortBy,
+        sortDir
+      };
+    }
     throw new Error(error.message);
   }
 
