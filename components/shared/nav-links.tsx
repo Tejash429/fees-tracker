@@ -2,15 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { AlertCircle, CreditCard, LayoutDashboard, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const links = [
-  { href: '/', label: 'Dashboard' },
-  { href: '/students', label: 'Students' },
-  { href: '/payments', label: 'Payments' },
-  { href: '/pending', label: 'Pending' },
-  { href: '/analytics', label: 'Analytics' },
-  { href: '/settings', label: 'Settings' }
+  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/students', label: 'Students', icon: Users },
+  { href: '/payments', label: 'Payments', icon: CreditCard },
+  { href: '/pending', label: 'Pending Dues', icon: AlertCircle }
 ];
 
 interface NavLinksProps {
@@ -25,13 +24,16 @@ export function NavLinks({ orientation = 'horizontal', onNavigate }: NavLinksPro
     <nav
       aria-label="Primary"
       className={cn(
-        'flex items-center gap-2',
-        orientation === 'horizontal' ? 'flex-wrap' : 'w-full flex-col items-stretch'
+        'flex items-center gap-1',
+        orientation === 'horizontal' ? 'flex-wrap' : 'w-full flex-col items-stretch gap-1.5'
       )}
     >
       {links.map((link) => {
+        const Icon = link.icon;
         const isRoot = link.href === '/';
-        const isActive = isRoot ? pathname === '/' : pathname === link.href || pathname.startsWith(`${link.href}/`);
+        const isActive = isRoot
+          ? pathname === '/'
+          : pathname === link.href || pathname.startsWith(`${link.href}/`);
 
         return (
           <Link
@@ -39,14 +41,23 @@ export function NavLinks({ orientation = 'horizontal', onNavigate }: NavLinksPro
             href={link.href}
             onClick={onNavigate}
             className={cn(
-              'rounded-md px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              orientation === 'vertical' ? 'w-full' : undefined,
+              'group relative flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              orientation === 'vertical' ? 'w-full py-2.5 text-sm' : undefined,
               isActive
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                ? 'bg-foreground/10 text-foreground shadow-xs ring-1 ring-foreground/20'
+                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
             )}
           >
-            {link.label}
+            <Icon
+              className={cn(
+                'h-3.5 w-3.5 transition-colors',
+                isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'
+              )}
+            />
+            <span>{link.label}</span>
+            {link.href === '/pending' && (
+              <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse" />
+            )}
           </Link>
         );
       })}

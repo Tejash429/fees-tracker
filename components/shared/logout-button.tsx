@@ -25,9 +25,18 @@ export function LogoutButton({ className }: { className?: string }) {
   };
 
   return (
-    <Button type="button" variant="outline" onClick={onLogout} className={cn('gap-2', className)}>
-      <LogOut className="h-4 w-4" />
-      Logout
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={onLogout}
+      className={cn(
+        'h-8 gap-1.5 rounded-lg border-border/70 px-2.5 text-xs text-muted-foreground transition-all hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive',
+        className
+      )}
+    >
+      <LogOut className="h-3.5 w-3.5" />
+      <span>Logout</span>
     </Button>
   );
 }

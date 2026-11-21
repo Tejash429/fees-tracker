@@ -63,12 +63,7 @@ type SortOrder = 'asc' | 'desc';
 function PendingTableSkeleton() {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} className="h-20 w-full rounded-xl" />
-        ))}
-      </div>
-      <Skeleton className="h-12 w-full rounded-lg" />
+      <Skeleton className="h-14 w-full rounded-xl" />
       <div className="space-y-2">
         {[1, 2, 3, 4, 5].map((i) => (
           <Skeleton key={i} className="h-16 w-full rounded-lg" />
@@ -236,89 +231,6 @@ export function PendingTable({ initialPendingRows }: { initialPendingRows: Pendi
 
   return (
     <div className="space-y-4">
-      {/* KPI Summary Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {/* Total Overdue */}
-        <div className="group relative overflow-hidden rounded-xl border border-rose-500/20 bg-gradient-to-br from-rose-950/20 to-card/60 p-3.5 transition-all hover:border-rose-500/30">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-rose-400">Total Dues</span>
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-rose-500/10 text-rose-400">
-              <AlertTriangle className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <p className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-            {formatCurrency(stats.totalDue)}
-          </p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Outstanding fee amount</p>
-        </div>
-
-        {/* Total Defaulters */}
-        <div className="group relative overflow-hidden rounded-xl border border-border/60 bg-card/60 p-3.5 transition-all hover:border-border">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Pending Students</span>
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-muted/60 text-muted-foreground">
-              <Users className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <p className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-            {stats.count}
-          </p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Requires fee collection</p>
-        </div>
-
-        {/* Never Paid */}
-        <button
-          type="button"
-          onClick={() => {
-            const next = statusFilter === 'never_paid' ? 'all' : 'never_paid';
-            setStatusFilter(next);
-            updateFiltersInUrl(search, classFilter, next);
-          }}
-          className={`group relative overflow-hidden rounded-xl border p-3.5 text-left transition-all ${
-            statusFilter === 'never_paid'
-              ? 'border-amber-500/50 bg-amber-500/10 shadow-sm'
-              : 'border-amber-500/20 bg-gradient-to-br from-amber-950/20 to-card/60 hover:border-amber-500/30'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-amber-400">Never Paid</span>
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-400">
-              <AlertCircle className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <p className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-            {stats.neverPaidCount}
-          </p>
-          <p className="mt-0.5 text-[11px] text-amber-400/80">No payments recorded</p>
-        </button>
-
-        {/* Coverage Expired */}
-        <button
-          type="button"
-          onClick={() => {
-            const next = statusFilter === 'overdue' ? 'all' : 'overdue';
-            setStatusFilter(next);
-            updateFiltersInUrl(search, classFilter, next);
-          }}
-          className={`group relative overflow-hidden rounded-xl border p-3.5 text-left transition-all ${
-            statusFilter === 'overdue'
-              ? 'border-rose-500/50 bg-rose-500/10 shadow-sm'
-              : 'border-rose-500/20 bg-gradient-to-br from-rose-950/15 to-card/60 hover:border-rose-500/30'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-rose-300">Period Overdue</span>
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-rose-500/10 text-rose-300">
-              <Clock className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <p className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-            {stats.overdueCount}
-          </p>
-          <p className="mt-0.5 text-[11px] text-rose-300/80">Paid before, now due</p>
-        </button>
-      </div>
-
       {/* Filter and Search Bar */}
       <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card/60 p-3 sm:p-4">
         {/* Quick Tabs: Status & Class */}
