@@ -6,6 +6,7 @@ import { PaymentType, PaymentsSortBy, SortDirection, StudentClass } from '@/type
 
 interface PaymentsPageProps {
   searchParams?: {
+    q?: string;
     class?: string;
     type?: string;
     page?: string;
@@ -17,6 +18,7 @@ interface PaymentsPageProps {
 const paymentSortFields: PaymentsSortBy[] = ['payment_date', 'amount', 'period_end', 'created_at'];
 
 export default async function PaymentsPage({ searchParams }: PaymentsPageProps) {
+  const search = searchParams?.q || '';
   const classFilter: 'all' | StudentClass =
     searchParams?.class === '9' || searchParams?.class === '10' ? searchParams.class : 'all';
 
@@ -32,7 +34,7 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
   const sortDir: SortDirection = searchParams?.sortDir === 'asc' ? 'asc' : 'desc';
 
   const [paymentsData, students] = await Promise.all([
-    getPaymentsTableData({ classFilter, typeFilter, page, pageSize: 10, sortBy, sortDir }),
+    getPaymentsTableData({ search, classFilter, typeFilter, page, pageSize: 10, sortBy, sortDir }),
     getStudents()
   ]);
 

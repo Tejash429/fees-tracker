@@ -77,6 +77,7 @@ export function fetchPaymentsByStudentClient(studentId: string) {
 }
 
 interface PaymentsTableQueryParams {
+  search?: string;
   classFilter?: 'all' | StudentClass;
   typeFilter?: 'all' | PaymentType;
   page: number;
@@ -92,6 +93,10 @@ export function fetchPaymentsTableClient(params: PaymentsTableQueryParams) {
   query.set('pageSize', String(params.pageSize));
   query.set('sortBy', params.sortBy);
   query.set('sortDir', params.sortDir);
+
+  if (params.search?.trim()) {
+    query.set('q', params.search.trim());
+  }
 
   if (params.classFilter && params.classFilter !== 'all') {
     query.set('class', params.classFilter);

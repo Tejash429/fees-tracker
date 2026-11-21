@@ -10,8 +10,7 @@ const links = [
   { href: '/payments', label: 'Payments' },
   { href: '/pending', label: 'Pending' },
   { href: '/analytics', label: 'Analytics' },
-  { href: '/settings', label: 'Settings' },
-  { href: '/help', label: 'Help' }
+  { href: '/settings', label: 'Settings' }
 ];
 
 interface NavLinksProps {

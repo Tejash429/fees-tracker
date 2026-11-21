@@ -36,10 +36,12 @@ export async function GET(request: Request) {
       const requestedSortDir = url.searchParams.get('sortDir');
       const sortDir: SortDirection = requestedSortDir === 'asc' ? 'asc' : 'desc';
 
+      const search = url.searchParams.get('q') || '';
       const page = Number(url.searchParams.get('page') || 1);
       const pageSize = Number(url.searchParams.get('pageSize') || 10);
 
       const data = await getPaymentsTableData({
+        search,
         classFilter,
         typeFilter,
         page,

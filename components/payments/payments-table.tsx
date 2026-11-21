@@ -5,8 +5,12 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { deletePaymentsBulkAction } from '@/lib/actions';
+import { exportToExcel } from '@/lib/export';
+import { printPaymentReceipt } from '@/components/payments/payment-receipt';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Download } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -72,6 +76,7 @@ export function PaymentsTable({
   const searchParams = useSearchParams();
   const [isBulkDeleting, startBulkDelete] = useTransition();
 
+  const initialSearch = searchParams.get('q') || '';
   const initialClassFilter =
     searchParams.get('class') === '9' || searchParams.get('class') === '10'
       ? (searchParams.get('class') as StudentClass)
@@ -90,6 +95,7 @@ export function PaymentsTable({
       : initialData.sortBy;
   const initialSortDir = searchParams.get('sortDir') === 'asc' ? 'asc' : initialData.sortDir;
 
+  const [search, setSearch] = useState(initialSearch);
   const [classFilter, setClassFilter] = useState<'all' | StudentClass>(initialClassFilter);
   const [typeFilter, setTypeFilter] = useState<'all' | PaymentType>(initialTypeFilter);
   const [page, setPage] = useState(initialPage);
@@ -99,6 +105,7 @@ export function PaymentsTable({
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
 
   const updateFiltersInUrl = (
+    nextSearch: string,
     nextClassFilter: 'all' | StudentClass,
     nextTypeFilter: 'all' | PaymentType,
     nextPage: number,
@@ -106,6 +113,12 @@ export function PaymentsTable({
     nextSortDir: 'asc' | 'desc'
   ) => {
     const params = new URLSearchParams(searchParams.toString());
+
+    if (nextSearch.trim()) {
+      params.set('q', nextSearch.trim());
+    } else {
+      params.delete('q');
+    }
 
     if (nextClassFilter !== 'all') {
       params.set('class', nextClassFilter);
@@ -145,6 +158,7 @@ export function PaymentsTable({
 
   const { data, isPending: isPendingPayments, isFetching: isFetchingPayments, dataUpdatedAt } = useQuery({
     queryKey: queryKeys.paymentsTable({
+      search,
       classFilter,
       typeFilter,
       page,
@@ -154,6 +168,7 @@ export function PaymentsTable({
     }),
     queryFn: () =>
       fetchPaymentsTableClient({
+        search,
         classFilter,
         typeFilter,
         page,
@@ -300,7 +315,7 @@ export function PaymentsTable({
     });
   };
 
-  const hasActiveFilters = classFilter !== 'all' || typeFilter !== 'all';
+  const hasActiveFilters = Boolean(search.trim()) || classFilter !== 'all' || typeFilter !== 'all';
   const pageRangeLabel = useMemo(() => {
     if (!total) return '0 of 0';
     const from = (page - 1) * PAYMENTS_PAGE_SIZE + 1;
@@ -330,7 +345,19 @@ export function PaymentsTable({
     <div className="space-y-4">
       <div className="rounded-lg border border-border/80 bg-card/40 p-3 sm:p-4">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="w-full sm:w-[190px]">
+          <Input
+            placeholder="Search student or phone"
+            value={search}
+            onChange={(event) => {
+              const nextSearch = event.target.value;
+              setSearch(nextSearch);
+              setPage(1);
+              updateFiltersInUrl(nextSearch, classFilter, typeFilter, 1, sortBy, sortDir);
+            }}
+            className="w-full sm:w-[220px] h-11"
+          />
+
+          <div className="w-full sm:w-[170px]">
             <label className="sr-only" htmlFor="payments-class-filter">
               Filter payments by class
             </label>
@@ -340,7 +367,7 @@ export function PaymentsTable({
                 const nextClassFilter = value as 'all' | StudentClass;
                 setClassFilter(nextClassFilter);
                 setPage(1);
-                updateFiltersInUrl(nextClassFilter, typeFilter, 1, sortBy, sortDir);
+                updateFiltersInUrl(search, nextClassFilter, typeFilter, 1, sortBy, sortDir);
               }}
             >
               <SelectTrigger id="payments-class-filter" aria-label="Filter payments by class" className="h-11">
@@ -354,7 +381,7 @@ export function PaymentsTable({
             </Select>
           </div>
 
-          <div className="w-full sm:w-[190px]">
+          <div className="w-full sm:w-[170px]">
             <label className="sr-only" htmlFor="payments-type-filter">
               Filter payments by type
             </label>
@@ -364,7 +391,7 @@ export function PaymentsTable({
                 const nextTypeFilter = value as 'all' | PaymentType;
                 setTypeFilter(nextTypeFilter);
                 setPage(1);
-                updateFiltersInUrl(classFilter, nextTypeFilter, 1, sortBy, sortDir);
+                updateFiltersInUrl(search, classFilter, nextTypeFilter, 1, sortBy, sortDir);
               }}
             >
               <SelectTrigger id="payments-type-filter" aria-label="Filter payments by payment type" className="h-11">
@@ -378,14 +405,14 @@ export function PaymentsTable({
             </Select>
           </div>
 
-          <div className="w-full sm:w-[180px]">
+          <div className="w-full sm:w-[160px]">
             <Select
               value={sortBy}
               onValueChange={(value) => {
                 const nextSortBy = value as PaymentsSortBy;
                 setSortBy(nextSortBy);
                 setPage(1);
-                updateFiltersInUrl(classFilter, typeFilter, 1, nextSortBy, sortDir);
+                updateFiltersInUrl(search, classFilter, typeFilter, 1, nextSortBy, sortDir);
               }}
             >
               <SelectTrigger aria-label="Sort payments by" className="h-11">
@@ -400,14 +427,14 @@ export function PaymentsTable({
             </Select>
           </div>
 
-          <div className="w-full sm:w-[160px]">
+          <div className="w-full sm:w-[140px]">
             <Select
               value={sortDir}
               onValueChange={(value) => {
                 const nextSortDir = value as 'asc' | 'desc';
                 setSortDir(nextSortDir);
                 setPage(1);
-                updateFiltersInUrl(classFilter, typeFilter, 1, sortBy, nextSortDir);
+                updateFiltersInUrl(search, classFilter, typeFilter, 1, sortBy, nextSortDir);
               }}
             >
               <SelectTrigger aria-label="Sort order" className="h-11">
@@ -419,6 +446,30 @@ export function PaymentsTable({
               </SelectContent>
             </Select>
           </div>
+
+          <Button
+            variant="outline"
+            className="h-11 gap-2"
+            disabled={!payments.length}
+            onClick={() => {
+              const exportRows = payments.map((p) => ({
+                'Receipt No': `REC-${p.id.slice(0, 8).toUpperCase()}`,
+                'Student Name': p.students?.name || '—',
+                'Class': `Class ${p.students?.class || '—'}`,
+                'Phone': p.students?.phone || '—',
+                'Payment Type': p.payment_type === 'yearly' ? 'Yearly' : 'Half Yearly',
+                'Amount (INR)': Number(p.amount || 0),
+                'Payment Date': p.payment_date,
+                'Period Start': p.period_start,
+                'Period End': p.period_end,
+                'Notes': p.notes || ''
+              }));
+              exportToExcel(exportRows, `Payments_${new Date().toISOString().split('T')[0]}`);
+            }}
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Export
+          </Button>
 
           <Badge variant="outline">Showing {pageRangeLabel}</Badge>
           <p className="text-xs text-muted-foreground">Last updated: {formatDateTime(dataUpdatedAt || Date.now())}</p>
@@ -492,6 +543,14 @@ export function PaymentsTable({
                           </Button>
                         }
                       />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full justify-start"
+                        onClick={() => printPaymentReceipt(payment)}
+                      >
+                        Print receipt
+                      </Button>
                       <RecordPaymentDialog
                         mode="edit"
                         payment={payment}
@@ -586,6 +645,14 @@ export function PaymentsTable({
                               </Button>
                             }
                           />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full justify-start"
+                            onClick={() => printPaymentReceipt(payment)}
+                          >
+                            Print receipt
+                          </Button>
                           <RecordPaymentDialog
                             mode="edit"
                             payment={payment}
@@ -626,7 +693,7 @@ export function PaymentsTable({
                 onClick={() => {
                   const nextPage = Math.max(1, page - 1);
                   setPage(nextPage);
-                  updateFiltersInUrl(classFilter, typeFilter, nextPage, sortBy, sortDir);
+                  updateFiltersInUrl(search, classFilter, typeFilter, nextPage, sortBy, sortDir);
                 }}
               >
                 Previous
@@ -638,7 +705,7 @@ export function PaymentsTable({
                 onClick={() => {
                   const nextPage = Math.min(totalPages, page + 1);
                   setPage(nextPage);
-                  updateFiltersInUrl(classFilter, typeFilter, nextPage, sortBy, sortDir);
+                  updateFiltersInUrl(search, classFilter, typeFilter, nextPage, sortBy, sortDir);
                 }}
               >
                 Next

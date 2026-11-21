@@ -48,7 +48,6 @@ export function StudentFormSheet({ mode, student, trigger }: StudentFormSheetPro
 
   const [name, setName] = useState('');
   const [studentClass, setStudentClass] = useState<StudentClass>('9');
-  const [parentName, setParentName] = useState('');
   const [phone, setPhone] = useState('');
   const [enrollmentDate, setEnrollmentDate] = useState(toISODate());
   const [errors, setErrors] = useState<StudentFormErrors>({});
@@ -57,7 +56,6 @@ export function StudentFormSheet({ mode, student, trigger }: StudentFormSheetPro
     if (mode === 'edit' && student && open) {
       setName(student.name || '');
       setStudentClass(student.class || '9');
-      setParentName(student.parent_name || '');
       setPhone(student.phone || '');
       setEnrollmentDate(student.enrollment_date || toISODate());
       setErrors({});
@@ -66,7 +64,6 @@ export function StudentFormSheet({ mode, student, trigger }: StudentFormSheetPro
     if (mode === 'create' && open) {
       setName('');
       setStudentClass('9');
-      setParentName('');
       setPhone('');
       setEnrollmentDate(toISODate());
       setErrors({});
@@ -104,7 +101,6 @@ export function StudentFormSheet({ mode, student, trigger }: StudentFormSheetPro
         id: student?.id,
         name,
         class: studentClass,
-        parent_name: parentName,
         phone,
         enrollment_date: enrollmentDate
       };
@@ -212,16 +208,6 @@ export function StudentFormSheet({ mode, student, trigger }: StudentFormSheetPro
                 {errors.studentClass}
               </p>
             ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="parent-name">Parent Name</Label>
-            <Input
-              id="parent-name"
-              placeholder="Parent name"
-              value={parentName}
-              onChange={(event) => setParentName(event.target.value)}
-            />
           </div>
 
           <div className="space-y-2">

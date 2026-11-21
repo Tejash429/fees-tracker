@@ -3,8 +3,11 @@
 import { useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import { exportToExcel } from '@/lib/export';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Download } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -45,6 +48,7 @@ export function PendingTable({ initialPendingRows }: { initialPendingRows: Pendi
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  const initialSearch = searchParams.get('q') || '';
   const initialClassFilter =
     searchParams.get('class') === '9' || searchParams.get('class') === '10'
       ? (searchParams.get('class') as StudentClass)
@@ -54,14 +58,22 @@ export function PendingTable({ initialPendingRows }: { initialPendingRows: Pendi
       ? (searchParams.get('status') as 'never_paid' | 'overdue')
       : 'all';
 
+  const [search, setSearch] = useState(initialSearch);
   const [classFilter, setClassFilter] = useState<'all' | StudentClass>(initialClassFilter);
   const [statusFilter, setStatusFilter] = useState<'all' | 'never_paid' | 'overdue'>(initialStatusFilter);
 
   const updateFiltersInUrl = (
+    nextSearch: string,
     nextClassFilter: 'all' | StudentClass,
     nextStatusFilter: 'all' | 'never_paid' | 'overdue'
   ) => {
     const params = new URLSearchParams(searchParams.toString());
+
+    if (nextSearch.trim()) {
+      params.set('q', nextSearch.trim());
+    } else {
+      params.delete('q');
+    }
 
     if (nextClassFilter !== 'all') {
       params.set('class', nextClassFilter);
@@ -91,12 +103,19 @@ export function PendingTable({ initialPendingRows }: { initialPendingRows: Pendi
   });
 
   const filteredRows = useMemo(() => {
+    const searchLower = search.trim().toLowerCase();
+
     return pendingRows.filter((row) => {
       const classMatches = classFilter === 'all' || row.student.class === classFilter;
       const statusMatches = statusFilter === 'all' || row.dueStatus === statusFilter;
-      return classMatches && statusMatches;
+      const searchMatches =
+        !searchLower ||
+        row.student.name.toLowerCase().includes(searchLower) ||
+        Boolean(row.student.phone && row.student.phone.toLowerCase().includes(searchLower));
+
+      return classMatches && statusMatches && searchMatches;
     });
-  }, [pendingRows, classFilter, statusFilter]);
+  }, [pendingRows, classFilter, statusFilter, search]);
 
   if (isPending && !pendingRows.length) {
     return <PendingTableSkeleton />;
@@ -114,13 +133,24 @@ export function PendingTable({ initialPendingRows }: { initialPendingRows: Pendi
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="w-full sm:w-[180px]">
+        <Input
+          placeholder="Search pending student or phone"
+          value={search}
+          onChange={(event) => {
+            const nextSearch = event.target.value;
+            setSearch(nextSearch);
+            updateFiltersInUrl(nextSearch, classFilter, statusFilter);
+          }}
+          className="w-full sm:w-[240px] h-11"
+        />
+
+        <div className="w-full sm:w-[170px]">
           <Select
             value={classFilter}
             onValueChange={(value) => {
               const nextClassFilter = value as 'all' | StudentClass;
               setClassFilter(nextClassFilter);
-              updateFiltersInUrl(nextClassFilter, statusFilter);
+              updateFiltersInUrl(search, nextClassFilter, statusFilter);
             }}
           >
             <SelectTrigger aria-label="Filter pending students by class" className="h-11">
@@ -134,13 +164,13 @@ export function PendingTable({ initialPendingRows }: { initialPendingRows: Pendi
           </Select>
         </div>
 
-        <div className="w-full sm:w-[190px]">
+        <div className="w-full sm:w-[170px]">
           <Select
             value={statusFilter}
             onValueChange={(value) => {
               const nextStatusFilter = value as 'all' | 'never_paid' | 'overdue';
               setStatusFilter(nextStatusFilter);
-              updateFiltersInUrl(classFilter, nextStatusFilter);
+              updateFiltersInUrl(search, classFilter, nextStatusFilter);
             }}
           >
             <SelectTrigger aria-label="Filter pending students by status" className="h-11">
@@ -153,6 +183,27 @@ export function PendingTable({ initialPendingRows }: { initialPendingRows: Pendi
             </SelectContent>
           </Select>
         </div>
+
+        <Button
+          variant="outline"
+          className="h-11 gap-2"
+          disabled={!filteredRows.length}
+          onClick={() => {
+            const exportRows = filteredRows.map((r) => ({
+              'Student Name': r.student.name,
+              'Class': `Class ${r.student.class}`,
+              'Phone': r.student.phone || '—',
+              'Due Status': r.dueStatus === 'never_paid' ? 'Never Paid' : 'Overdue',
+              'Due Amount (INR)': r.dueAmount,
+              'Last Payment Date': r.latestPayment?.payment_date || 'None',
+              'Coverage End Date': r.latestPayment?.period_end || 'None'
+            }));
+            exportToExcel(exportRows, `Pending_Dues_${new Date().toISOString().split('T')[0]}`);
+          }}
+        >
+          <Download className="h-4 w-4" aria-hidden="true" />
+          Export
+        </Button>
 
         <Badge variant="outline">Showing {filteredRows.length}</Badge>
 

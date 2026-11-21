@@ -10,6 +10,7 @@ interface StudentsTableKeyParams {
 }
 
 interface PaymentsTableKeyParams {
+  search: string;
   classFilter: 'all' | StudentClass;
   typeFilter: 'all' | PaymentType;
   page: number;
@@ -38,6 +39,7 @@ export const queryKeys = {
   paymentsTable: (params: PaymentsTableKeyParams) =>
     [
       'payments-table',
+      params.search,
       params.classFilter,
       params.typeFilter,
       params.page,

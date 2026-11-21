@@ -208,7 +208,7 @@ export function StudentsTable({ initialData }: { initialData: StudentsTableData 
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <Input
-          placeholder="Search by name / phone / parent"
+          placeholder="Search by name or phone"
           value={search}
           onChange={(event) => {
             const nextSearch = event.target.value;
@@ -307,7 +307,6 @@ export function StudentsTable({ initialData }: { initialData: StudentsTableData 
                 </div>
 
                 <div className="mt-3 grid gap-1 text-sm text-muted-foreground">
-                  <p>Parent: {student.parent_name || '—'}</p>
                   <p>Enrollment: {formatDate(student.enrollment_date)}</p>
                 </div>
 
@@ -346,7 +345,6 @@ export function StudentsTable({ initialData }: { initialData: StudentsTableData 
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Class</TableHead>
-                  <TableHead>Parent Name</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Enrollment Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -359,7 +357,6 @@ export function StudentsTable({ initialData }: { initialData: StudentsTableData 
                     <TableCell>
                       <Badge variant="secondary">Class {student.class}</Badge>
                     </TableCell>
-                    <TableCell>{student.parent_name || '—'}</TableCell>
                     <TableCell>{student.phone || '—'}</TableCell>
                     <TableCell>{formatDate(student.enrollment_date)}</TableCell>
                     <TableCell className="text-right">

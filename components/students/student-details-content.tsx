@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/shared/empty-state';
 import { OverflowMenu } from '@/components/shared/overflow-menu';
 import { PaymentDetailsSheet } from '@/components/payments/payment-details-sheet';
+import { printPaymentReceipt } from '@/components/payments/payment-receipt';
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog';
 import { DeletePaymentButton } from '@/components/payments/delete-payment-button';
 import { fetchPaymentsByStudentClient } from '@/lib/query-client-fetchers';
@@ -123,6 +124,14 @@ export function StudentDetailsContent({
                             </Button>
                           }
                         />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="w-full justify-start"
+                          onClick={() => printPaymentReceipt(payment)}
+                        >
+                          Print receipt
+                        </Button>
                         <RecordPaymentDialog
                           mode="edit"
                           payment={payment}
@@ -184,6 +193,14 @@ export function StudentDetailsContent({
                                 </Button>
                               }
                             />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="w-full justify-start"
+                              onClick={() => printPaymentReceipt(payment)}
+                            >
+                              Print receipt
+                            </Button>
                             <RecordPaymentDialog
                               mode="edit"
                               payment={payment}

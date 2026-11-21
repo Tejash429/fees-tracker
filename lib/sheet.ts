@@ -9,7 +9,7 @@ export interface NormalizedImportRow {
   rowNumber: number;
   name: string;
   class: StudentClass | '';
-  parent_name: string;
+  parent_name?: string;
   phone: string;
   enrollment_date: string;
   errors: string[];

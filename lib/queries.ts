@@ -62,7 +62,7 @@ export async function getStudentsTableData(options: GetStudentsTableOptions = {}
   }
 
   if (search) {
-    query = query.or(`name.ilike.%${search}%,parent_name.ilike.%${search}%,phone.ilike.%${search}%`);
+    query = query.or(`name.ilike.%${search}%,phone.ilike.%${search}%`);
   }
 
   const from = (page - 1) * pageSize;
@@ -165,6 +165,7 @@ export async function getPaymentsByStudent(studentId: string) {
 const PAYMENTS_SORT_COLUMNS: PaymentsSortBy[] = ['payment_date', 'amount', 'period_end', 'created_at'];
 
 interface GetPaymentsTableOptions {
+  search?: string;
   classFilter?: 'all' | StudentClass;
   typeFilter?: 'all' | PaymentType;
   page?: number;
@@ -176,6 +177,7 @@ interface GetPaymentsTableOptions {
 export async function getPaymentsTableData(options: GetPaymentsTableOptions = {}): Promise<PaymentsTableData> {
   const supabase = createServerSupabaseClient();
 
+  const search = options.search?.trim();
   const classFilter = options.classFilter || 'all';
   const typeFilter = options.typeFilter || 'all';
   const pageSize = Number.isFinite(options.pageSize) ? Math.max(1, Math.min(Number(options.pageSize), 100)) : 10;
@@ -187,7 +189,7 @@ export async function getPaymentsTableData(options: GetPaymentsTableOptions = {}
 
   let query = supabase
     .from('payments')
-    .select('*, students!inner(id, name, class, phone, parent_name)', { count: 'exact' });
+    .select('*, students!inner(id, name, class, phone)', { count: 'exact' });
 
   if (classFilter === '9' || classFilter === '10') {
     query = query.eq('students.class', classFilter);
@@ -195,6 +197,10 @@ export async function getPaymentsTableData(options: GetPaymentsTableOptions = {}
 
   if (typeFilter === 'yearly' || typeFilter === 'half_yearly') {
     query = query.eq('payment_type', typeFilter);
+  }
+
+  if (search) {
+    query = query.or(`name.ilike.%${search}%,phone.ilike.%${search}%`, { foreignTable: 'students' });
   }
 
   const from = (page - 1) * pageSize;

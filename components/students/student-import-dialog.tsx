@@ -35,7 +35,7 @@ interface EditableImportRow {
   rowNumber: number;
   name: string;
   class: StudentClass | '';
-  parent_name: string;
+  parent_name?: string;
   phone: string;
   enrollment_date: string;
   errors: string[];
@@ -146,7 +146,6 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
         rowNumber: (prev[prev.length - 1]?.rowNumber || 0) + 1,
         name: '',
         class: '',
-        parent_name: '',
         phone: '',
         enrollment_date: toISODate(),
         errors: ['Name required', 'Class must be 9/10']
@@ -373,12 +372,6 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
                       </Select>
 
                       <Input
-                        placeholder="Parent name"
-                        value={row.parent_name}
-                        onChange={(event) => updateRow(row.rowNumber, 'parent_name', event.target.value)}
-                      />
-
-                      <Input
                         placeholder="Phone"
                         value={row.phone}
                         onChange={(event) => updateRow(row.rowNumber, 'phone', event.target.value)}
@@ -409,7 +402,6 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
                       <TableHead>#</TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead>Class</TableHead>
-                      <TableHead>Parent Name</TableHead>
                       <TableHead>Phone</TableHead>
                       <TableHead>Enrollment Date</TableHead>
                       <TableHead>Errors</TableHead>
@@ -442,12 +434,6 @@ export function StudentImportDialog({ onImported }: { onImported?: () => void })
                               <SelectItem value="10">10</SelectItem>
                             </SelectContent>
                           </Select>
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={row.parent_name}
-                            onChange={(event) => updateRow(row.rowNumber, 'parent_name', event.target.value)}
-                          />
                         </TableCell>
                         <TableCell>
                           <Input

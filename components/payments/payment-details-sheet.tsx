@@ -1,9 +1,10 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { Eye } from 'lucide-react';
+import { Eye, Printer } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { printPaymentReceipt } from '@/components/payments/payment-receipt';
 import {
   Sheet,
   SheetContent,
@@ -50,7 +51,6 @@ export function PaymentDetailsSheet({ payment, trigger }: { payment: PaymentWith
               label="Class"
               value={<Badge variant="outline">Class {payment.students?.class || '-'}</Badge>}
             />
-            <DetailRow label="Parent Name" value={payment.students?.parent_name || '—'} />
             <DetailRow label="Phone" value={payment.students?.phone || '—'} />
           </section>
 
@@ -75,6 +75,15 @@ export function PaymentDetailsSheet({ payment, trigger }: { payment: PaymentWith
             <h3 className="text-sm font-semibold text-foreground">Notes</h3>
             <DetailRow label="Notes" value={payment.notes?.trim() || 'No notes'} />
           </section>
+
+          <Button
+            variant="default"
+            className="w-full gap-2 h-11"
+            onClick={() => printPaymentReceipt(payment)}
+          >
+            <Printer className="h-4 w-4" aria-hidden="true" />
+            Print / Save Receipt Slip
+          </Button>
         </div>
       </SheetContent>
     </Sheet>

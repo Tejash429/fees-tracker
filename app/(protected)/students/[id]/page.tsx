@@ -27,7 +27,7 @@ export default async function StudentDetailsPage({ params }: StudentDetailsPageP
     <div className="space-y-6">
       <PageHeader
         title={student.name}
-        description={`Class ${student.class} • Parent: ${student.parent_name || '—'} • Phone: ${student.phone || '—'}`}
+        description={`Class ${student.class} • Phone: ${student.phone || '—'}`}
         actions={
           <Button asChild variant="outline">
             <Link href="/students">Back to Students</Link>
