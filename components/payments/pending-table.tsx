@@ -1,13 +1,31 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowUpDown,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Download,
+  ExternalLink,
+  Filter,
+  Phone,
+  Plus,
+  Search,
+  User,
+  Users,
+  X
+} from 'lucide-react';
+
 import { exportToExcel } from '@/lib/export';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Download } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -19,26 +37,43 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
   TableRow
 } from '@/components/ui/table';
 import { EmptyState } from '@/components/shared/empty-state';
+import { OverflowMenu } from '@/components/shared/overflow-menu';
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog';
 import { fetchPendingStudentsClient } from '@/lib/query-client-fetchers';
 import { queryKeys } from '@/lib/query-keys';
-import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils';
+import {
+  formatCurrency,
+  formatDate,
+  formatDateTime,
+  getAvatarColor,
+  getInitials,
+  sanitizePhone
+} from '@/lib/utils';
 import { PendingStudent, StudentClass } from '@/types';
+
+type SortField = 'dueAmount' | 'name' | 'class' | 'latestPayment';
+type SortOrder = 'asc' | 'desc';
 
 function PendingTableSkeleton() {
   return (
-    <div className="space-y-3">
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-10 w-full" />
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} className="h-20 w-full rounded-xl" />
+        ))}
+      </div>
+      <Skeleton className="h-12 w-full rounded-lg" />
+      <div className="space-y-2">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <Skeleton key={i} className="h-16 w-full rounded-lg" />
+        ))}
+      </div>
     </div>
   );
 }
@@ -61,6 +96,8 @@ export function PendingTable({ initialPendingRows }: { initialPendingRows: Pendi
   const [search, setSearch] = useState(initialSearch);
   const [classFilter, setClassFilter] = useState<'all' | StudentClass>(initialClassFilter);
   const [statusFilter, setStatusFilter] = useState<'all' | 'never_paid' | 'overdue'>(initialStatusFilter);
+  const [sortField, setSortField] = useState<SortField>('dueAmount');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
   const updateFiltersInUrl = (
     nextSearch: string,
@@ -102,10 +139,30 @@ export function PendingTable({ initialPendingRows }: { initialPendingRows: Pendi
     initialData: initialPendingRows
   });
 
+  // Calculate live statistics
+  const stats = useMemo(() => {
+    const totalDue = pendingRows.reduce((sum, r) => sum + (r.dueAmount || 0), 0);
+    const count = pendingRows.length;
+    const neverPaidCount = pendingRows.filter((r) => r.dueStatus === 'never_paid').length;
+    const overdueCount = pendingRows.filter((r) => r.dueStatus === 'overdue').length;
+    const class9Count = pendingRows.filter((r) => r.student.class === '9').length;
+    const class10Count = pendingRows.filter((r) => r.student.class === '10').length;
+
+    return {
+      totalDue,
+      count,
+      neverPaidCount,
+      overdueCount,
+      class9Count,
+      class10Count
+    };
+  }, [pendingRows]);
+
+  // Filtered and sorted rows
   const filteredRows = useMemo(() => {
     const searchLower = search.trim().toLowerCase();
 
-    return pendingRows.filter((row) => {
+    const filtered = pendingRows.filter((row) => {
       const classMatches = classFilter === 'all' || row.student.class === classFilter;
       const statusMatches = statusFilter === 'all' || row.dueStatus === statusFilter;
       const searchMatches =
@@ -115,7 +172,54 @@ export function PendingTable({ initialPendingRows }: { initialPendingRows: Pendi
 
       return classMatches && statusMatches && searchMatches;
     });
-  }, [pendingRows, classFilter, statusFilter, search]);
+
+    return [...filtered].sort((a, b) => {
+      let comparison = 0;
+      if (sortField === 'dueAmount') {
+        comparison = (a.dueAmount || 0) - (b.dueAmount || 0);
+      } else if (sortField === 'name') {
+        comparison = a.student.name.localeCompare(b.student.name);
+      } else if (sortField === 'class') {
+        comparison = a.student.class.localeCompare(b.student.class);
+      } else if (sortField === 'latestPayment') {
+        const dateA = a.latestPayment ? new Date(a.latestPayment.period_end).getTime() : 0;
+        const dateB = b.latestPayment ? new Date(b.latestPayment.period_end).getTime() : 0;
+        comparison = dateA - dateB;
+      }
+      return sortOrder === 'desc' ? -comparison : comparison;
+    });
+  }, [pendingRows, classFilter, statusFilter, search, sortField, sortOrder]);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortOrder('desc');
+    }
+  };
+
+  const handleExport = () => {
+    const exportRows = filteredRows.map((r) => ({
+      'Student Name': r.student.name,
+      'Class': `Class ${r.student.class}`,
+      'Phone': r.student.phone || '—',
+      'Due Status': r.dueStatus === 'never_paid' ? 'Never Paid' : 'Overdue',
+      'Due Amount (INR)': r.dueAmount,
+      'Last Payment Date': r.latestPayment?.payment_date ? formatDate(r.latestPayment.payment_date) : 'None',
+      'Coverage End Date': r.latestPayment?.period_end ? formatDate(r.latestPayment.period_end) : 'None'
+    }));
+    exportToExcel(exportRows, `Pending_Dues_${new Date().toISOString().split('T')[0]}`);
+  };
+
+  const clearAllFilters = () => {
+    setSearch('');
+    setClassFilter('all');
+    setStatusFilter('all');
+    updateFiltersInUrl('', 'all', 'all');
+  };
+
+  const hasActiveFilters = search.trim() !== '' || classFilter !== 'all' || statusFilter !== 'all';
 
   if (isPending && !pendingRows.length) {
     return <PendingTableSkeleton />;
@@ -125,190 +229,590 @@ export function PendingTable({ initialPendingRows }: { initialPendingRows: Pendi
     return (
       <EmptyState
         title="No pending dues"
-        description="Great! All students are covered by active payment periods."
+        description="Great! All active students are fully covered by active payment periods."
       />
     );
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <Input
-          placeholder="Search pending student or phone"
-          value={search}
-          onChange={(event) => {
-            const nextSearch = event.target.value;
-            setSearch(nextSearch);
-            updateFiltersInUrl(nextSearch, classFilter, statusFilter);
-          }}
-          className="w-full sm:w-[240px] h-11"
-        />
-
-        <div className="w-full sm:w-[170px]">
-          <Select
-            value={classFilter}
-            onValueChange={(value) => {
-              const nextClassFilter = value as 'all' | StudentClass;
-              setClassFilter(nextClassFilter);
-              updateFiltersInUrl(search, nextClassFilter, statusFilter);
-            }}
-          >
-            <SelectTrigger aria-label="Filter pending students by class" className="h-11">
-              <SelectValue placeholder="Class" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Classes</SelectItem>
-              <SelectItem value="9">Class 9</SelectItem>
-              <SelectItem value="10">Class 10</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="w-full sm:w-[170px]">
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => {
-              const nextStatusFilter = value as 'all' | 'never_paid' | 'overdue';
-              setStatusFilter(nextStatusFilter);
-              updateFiltersInUrl(search, classFilter, nextStatusFilter);
-            }}
-          >
-            <SelectTrigger aria-label="Filter pending students by status" className="h-11">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="never_paid">Never Paid</SelectItem>
-              <SelectItem value="overdue">Overdue</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <Button
-          variant="outline"
-          className="h-11 gap-2"
-          disabled={!filteredRows.length}
-          onClick={() => {
-            const exportRows = filteredRows.map((r) => ({
-              'Student Name': r.student.name,
-              'Class': `Class ${r.student.class}`,
-              'Phone': r.student.phone || '—',
-              'Due Status': r.dueStatus === 'never_paid' ? 'Never Paid' : 'Overdue',
-              'Due Amount (INR)': r.dueAmount,
-              'Last Payment Date': r.latestPayment?.payment_date || 'None',
-              'Coverage End Date': r.latestPayment?.period_end || 'None'
-            }));
-            exportToExcel(exportRows, `Pending_Dues_${new Date().toISOString().split('T')[0]}`);
-          }}
-        >
-          <Download className="h-4 w-4" aria-hidden="true" />
-          Export
-        </Button>
-
-        <Badge variant="outline">Showing {filteredRows.length}</Badge>
-
-        <p className="text-xs text-muted-foreground">Last updated: {formatDateTime(dataUpdatedAt || Date.now())}</p>
-
-        {isFetching ? (
-          <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
-            Updating pending dues…
+    <div className="space-y-4">
+      {/* KPI Summary Cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {/* Total Overdue */}
+        <div className="group relative overflow-hidden rounded-xl border border-rose-500/20 bg-gradient-to-br from-rose-950/20 to-card/60 p-3.5 transition-all hover:border-rose-500/30">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-rose-400">Total Dues</span>
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-rose-500/10 text-rose-400">
+              <AlertTriangle className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <p className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            {formatCurrency(stats.totalDue)}
           </p>
-        ) : null}
+          <p className="mt-0.5 text-[11px] text-muted-foreground">Outstanding fee amount</p>
+        </div>
+
+        {/* Total Defaulters */}
+        <div className="group relative overflow-hidden rounded-xl border border-border/60 bg-card/60 p-3.5 transition-all hover:border-border">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Pending Students</span>
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-muted/60 text-muted-foreground">
+              <Users className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <p className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            {stats.count}
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">Requires fee collection</p>
+        </div>
+
+        {/* Never Paid */}
+        <button
+          type="button"
+          onClick={() => {
+            const next = statusFilter === 'never_paid' ? 'all' : 'never_paid';
+            setStatusFilter(next);
+            updateFiltersInUrl(search, classFilter, next);
+          }}
+          className={`group relative overflow-hidden rounded-xl border p-3.5 text-left transition-all ${
+            statusFilter === 'never_paid'
+              ? 'border-amber-500/50 bg-amber-500/10 shadow-sm'
+              : 'border-amber-500/20 bg-gradient-to-br from-amber-950/20 to-card/60 hover:border-amber-500/30'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-amber-400">Never Paid</span>
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-400">
+              <AlertCircle className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <p className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            {stats.neverPaidCount}
+          </p>
+          <p className="mt-0.5 text-[11px] text-amber-400/80">No payments recorded</p>
+        </button>
+
+        {/* Coverage Expired */}
+        <button
+          type="button"
+          onClick={() => {
+            const next = statusFilter === 'overdue' ? 'all' : 'overdue';
+            setStatusFilter(next);
+            updateFiltersInUrl(search, classFilter, next);
+          }}
+          className={`group relative overflow-hidden rounded-xl border p-3.5 text-left transition-all ${
+            statusFilter === 'overdue'
+              ? 'border-rose-500/50 bg-rose-500/10 shadow-sm'
+              : 'border-rose-500/20 bg-gradient-to-br from-rose-950/15 to-card/60 hover:border-rose-500/30'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-rose-300">Period Overdue</span>
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-rose-500/10 text-rose-300">
+              <Clock className="h-3.5 w-3.5" />
+            </div>
+          </div>
+          <p className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            {stats.overdueCount}
+          </p>
+          <p className="mt-0.5 text-[11px] text-rose-300/80">Paid before, now due</p>
+        </button>
       </div>
 
-      {!filteredRows.length ? (
-        <EmptyState title="No pending students match these filters" description="Try changing class or status filters." />
-      ) : (
-        <>
-          <div className="space-y-3 md:hidden">
-            {filteredRows.map((row) => (
-              <div key={row.student.id} className="rounded-lg border border-border/70 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium">{row.student.name}</p>
-                    <p className="text-xs text-muted-foreground">{row.student.phone || 'No phone'}</p>
-                  </div>
-                  <Badge variant="outline">Class {row.student.class}</Badge>
-                </div>
-
-                <div className="mt-3 grid gap-2 text-sm">
-                  <p>
-                    <span className="text-muted-foreground">Status:</span>{' '}
-                    {row.dueStatus === 'never_paid' ? '⚠ Never Paid' : '⚠ Overdue'}
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Last covered till:</span>{' '}
-                    {row.latestPayment ? formatDate(row.latestPayment.period_end) : 'No payment record'}
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Due amount:</span>{' '}
-                    <span className="font-semibold">{formatCurrency(row.dueAmount)}</span>
-                  </p>
-                </div>
-
-                <div className="mt-3">
-                  <RecordPaymentDialog
-                    students={[row.student]}
-                    defaultStudentId={row.student.id}
-                    trigger={<Button className="w-full">Record Payment</Button>}
-                  />
-                </div>
-              </div>
-            ))}
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card/60 p-3 sm:p-4">
+        {/* Quick Tabs: Status & Class */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Status Pills */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setStatusFilter('all');
+                updateFiltersInUrl(search, classFilter, 'all');
+              }}
+              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+                statusFilter === 'all'
+                  ? 'bg-foreground text-background shadow-xs'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              All Dues ({stats.count})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setStatusFilter('never_paid');
+                updateFiltersInUrl(search, classFilter, 'never_paid');
+              }}
+              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+                statusFilter === 'never_paid'
+                  ? 'bg-amber-500 text-amber-950 shadow-xs'
+                  : 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+              }`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              Never Paid ({stats.neverPaidCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setStatusFilter('overdue');
+                updateFiltersInUrl(search, classFilter, 'overdue');
+              }}
+              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+                statusFilter === 'overdue'
+                  ? 'bg-rose-500 text-white shadow-xs'
+                  : 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
+              }`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              Overdue ({stats.overdueCount})
+            </button>
           </div>
 
-          <div className="hidden md:block">
+          {/* Class Filters */}
+          <div className="flex items-center gap-1.5 border-t border-border/40 pt-2 sm:border-t-0 sm:pt-0">
+            <span className="text-[11px] font-medium text-muted-foreground">Class:</span>
+            {(['all', '9', '10'] as const).map((cls) => {
+              const isActive = classFilter === cls;
+              const count =
+                cls === 'all' ? stats.count : cls === '9' ? stats.class9Count : stats.class10Count;
+              return (
+                <button
+                  key={cls}
+                  type="button"
+                  onClick={() => {
+                    setClassFilter(cls);
+                    updateFiltersInUrl(search, cls, statusFilter);
+                  }}
+                  className={`rounded-md px-2 py-0.5 text-xs font-medium transition-all ${
+                    isActive
+                      ? 'bg-muted text-foreground ring-1 ring-border'
+                      : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                  }`}
+                >
+                  {cls === 'all' ? 'All' : `Class ${cls}`} ({count})
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Search, Sort, Export Toolbar */}
+        <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:justify-between">
+          {/* Search Box */}
+          <div className="relative flex-1 sm:max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search by student name or phone..."
+              value={search}
+              onChange={(e) => {
+                const nextSearch = e.target.value;
+                setSearch(nextSearch);
+                updateFiltersInUrl(nextSearch, classFilter, statusFilter);
+              }}
+              className="h-9 pl-8 pr-8 text-xs"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  updateFiltersInUrl('', classFilter, statusFilter);
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Sort & Export Actions */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={sortField}
+              onValueChange={(val) => setSortField(val as SortField)}
+            >
+              <SelectTrigger className="h-9 w-[150px] text-xs">
+                <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dueAmount">Due Amount</SelectItem>
+                <SelectItem value="name">Student Name</SelectItem>
+                <SelectItem value="class">Class</SelectItem>
+                <SelectItem value="latestPayment">Coverage Date</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+              className="h-9 px-2 text-xs"
+              title={`Sorting ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
+            >
+              {sortOrder === 'asc' ? '↑ Asc' : '↓ Desc'}
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              disabled={!filteredRows.length}
+              className="h-9 gap-1.5 text-xs"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </Button>
+          </div>
+        </div>
+
+        {/* Active Filters Bar */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-border/40 pt-2 text-xs">
+            <span className="text-muted-foreground">Active filters:</span>
+            {search.trim() && (
+              <Badge variant="secondary" className="gap-1 py-0.5 text-[11px]">
+                Search: {search}
+                <X
+                  className="h-3 w-3 cursor-pointer opacity-70 hover:opacity-100"
+                  onClick={() => {
+                    setSearch('');
+                    updateFiltersInUrl('', classFilter, statusFilter);
+                  }}
+                />
+              </Badge>
+            )}
+            {classFilter !== 'all' && (
+              <Badge variant="secondary" className="gap-1 py-0.5 text-[11px]">
+                Class {classFilter}
+                <X
+                  className="h-3 w-3 cursor-pointer opacity-70 hover:opacity-100"
+                  onClick={() => {
+                    setClassFilter('all');
+                    updateFiltersInUrl(search, 'all', statusFilter);
+                  }}
+                />
+              </Badge>
+            )}
+            {statusFilter !== 'all' && (
+              <Badge variant="secondary" className="gap-1 py-0.5 text-[11px]">
+                Status: {statusFilter === 'never_paid' ? 'Never Paid' : 'Overdue'}
+                <X
+                  className="h-3 w-3 cursor-pointer opacity-70 hover:opacity-100"
+                  onClick={() => {
+                    setStatusFilter('all');
+                    updateFiltersInUrl(search, classFilter, 'all');
+                  }}
+                />
+              </Badge>
+            )}
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="text-[11px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Reset all
+            </button>
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              Showing {filteredRows.length} of {pendingRows.length}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Table / Cards List */}
+      {!filteredRows.length ? (
+        <EmptyState
+          title="No matching pending dues"
+          description="Try adjusting your search terms or clearing your status and class filters."
+          action={
+            <Button variant="outline" size="sm" onClick={clearAllFilters}>
+              Reset Filters
+            </Button>
+          }
+        />
+      ) : (
+        <>
+          {/* Mobile Card View */}
+          <div className="space-y-3 sm:hidden">
+            {filteredRows.map((row) => {
+              const avatarColor = getAvatarColor(row.student.name);
+              const initials = getInitials(row.student.name);
+
+              return (
+                <div
+                  key={row.student.id}
+                  className="relative rounded-xl border border-border/70 bg-card/70 p-3.5 shadow-xs transition-colors hover:border-border"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${avatarColor}`}
+                      >
+                        {initials}
+                      </div>
+                      <div>
+                        <Link
+                          href={`/students/${row.student.id}`}
+                          className="font-medium text-foreground hover:underline"
+                        >
+                          {row.student.name}
+                        </Link>
+                        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="rounded bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-foreground">
+                            Class {row.student.class}
+                          </span>
+                          {row.student.phone ? (
+                            <a
+                              href={`tel:${sanitizePhone(row.student.phone)}`}
+                              className="inline-flex items-center gap-1 hover:text-foreground"
+                            >
+                              <Phone className="h-3 w-3" />
+                              {row.student.phone}
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground/60">No phone</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status Pill */}
+                    {row.dueStatus === 'never_paid' ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                        Never Paid
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-medium text-rose-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                        Overdue
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border/40 pt-2.5 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Last covered till:</span>
+                      <p className="mt-0.5 font-medium text-foreground">
+                        {row.latestPayment ? formatDate(row.latestPayment.period_end) : 'No payment record'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Due amount:</span>
+                      <p className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
+                        {formatCurrency(row.dueAmount)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2">
+                    <RecordPaymentDialog
+                      students={[row.student]}
+                      defaultStudentId={row.student.id}
+                      trigger={
+                        <Button size="sm" className="h-9 flex-1 gap-1.5 text-xs font-medium">
+                          <Plus className="h-3.5 w-3.5" />
+                          Record Fee
+                        </Button>
+                      }
+                    />
+                    <Button asChild size="sm" variant="outline" className="h-9 px-3 text-xs">
+                      <Link href={`/students/${row.student.id}`}>View</Link>
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop Table View */}
+          <div className="hidden overflow-hidden rounded-xl border border-border/70 bg-card/50 sm:block">
             <Table>
-              <TableCaption className="sr-only">Pending dues table with quick record payment action.</TableCaption>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Student</TableHead>
-                  <TableHead>Class</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last Covered Till</TableHead>
-                  <TableHead>Due Amount</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
+                <TableRow className="border-border/60 bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="w-[300px]">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('name')}
+                      className="flex items-center gap-1.5 font-medium hover:text-foreground"
+                    >
+                      Student
+                      <ArrowUpDown className="h-3.5 w-3.5 opacity-70" />
+                    </button>
+                  </TableHead>
+                  <TableHead className="w-[100px]">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('class')}
+                      className="flex items-center gap-1.5 font-medium hover:text-foreground"
+                    >
+                      Class
+                      <ArrowUpDown className="h-3.5 w-3.5 opacity-70" />
+                    </button>
+                  </TableHead>
+                  <TableHead className="w-[150px]">Status</TableHead>
+                  <TableHead className="w-[180px]">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('latestPayment')}
+                      className="flex items-center gap-1.5 font-medium hover:text-foreground"
+                    >
+                      Last Covered Till
+                      <ArrowUpDown className="h-3.5 w-3.5 opacity-70" />
+                    </button>
+                  </TableHead>
+                  <TableHead className="w-[150px]">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort('dueAmount')}
+                      className="flex items-center gap-1.5 font-medium hover:text-foreground"
+                    >
+                      Due Amount
+                      <ArrowUpDown className="h-3.5 w-3.5 opacity-70" />
+                    </button>
+                  </TableHead>
+                  <TableHead className="w-[180px] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRows.map((row) => (
-                  <TableRow key={row.student.id}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{row.student.name}</p>
-                        <p className="text-xs text-muted-foreground">{row.student.phone || 'No phone'}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">Class {row.student.class}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      {row.dueStatus === 'never_paid' ? (
-                        <Badge variant="destructive">⚠ Never Paid</Badge>
-                      ) : (
-                        <Badge variant="secondary">⚠ Overdue</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>{row.latestPayment ? formatDate(row.latestPayment.period_end) : 'No payment record'}</TableCell>
-                    <TableCell className="font-semibold">{formatCurrency(row.dueAmount)}</TableCell>
-                    <TableCell className="text-right">
-                      <RecordPaymentDialog
-                        students={[row.student]}
-                        defaultStudentId={row.student.id}
-                        trigger={
-                          <Button size="sm" className="ml-auto h-11">
-                            Record Payment
+                {filteredRows.map((row) => {
+                  const avatarColor = getAvatarColor(row.student.name);
+                  const initials = getInitials(row.student.name);
+
+                  return (
+                    <TableRow key={row.student.id} className="group border-border/40 hover:bg-muted/30">
+                      {/* Student Info */}
+                      <TableCell className="py-3">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${avatarColor}`}
+                          >
+                            {initials}
+                          </div>
+                          <div>
+                            <Link
+                              href={`/students/${row.student.id}`}
+                              className="font-medium text-foreground transition-colors hover:text-primary hover:underline"
+                            >
+                              {row.student.name}
+                            </Link>
+                            {row.student.phone ? (
+                              <div className="mt-0.5">
+                                <a
+                                  href={`tel:${sanitizePhone(row.student.phone)}`}
+                                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                                >
+                                  <Phone className="h-3 w-3" />
+                                  {row.student.phone}
+                                </a>
+                              </div>
+                            ) : (
+                              <p className="mt-0.5 text-xs text-muted-foreground/60">—</p>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+
+                      {/* Class */}
+                      <TableCell className="py-3">
+                        <span className="inline-flex items-center rounded-md border border-border/60 bg-muted/50 px-2 py-0.5 text-xs font-medium text-foreground">
+                          Class {row.student.class}
+                        </span>
+                      </TableCell>
+
+                      {/* Status */}
+                      <TableCell className="py-3">
+                        {row.dueStatus === 'never_paid' ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                            Never Paid
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-medium text-rose-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                            Overdue
+                          </span>
+                        )}
+                      </TableCell>
+
+                      {/* Last Covered Till */}
+                      <TableCell className="py-3">
+                        {row.latestPayment ? (
+                          <div>
+                            <span className="text-xs font-medium text-foreground">
+                              {formatDate(row.latestPayment.period_end)}
+                            </span>
+                            <p className="text-[11px] text-muted-foreground">
+                              Paid on {formatDate(row.latestPayment.payment_date)}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/80">No payments yet</span>
+                        )}
+                      </TableCell>
+
+                      {/* Due Amount */}
+                      <TableCell className="py-3">
+                        <span className="text-sm font-semibold tabular-nums text-foreground">
+                          {formatCurrency(row.dueAmount)}
+                        </span>
+                      </TableCell>
+
+                      {/* Actions */}
+                      <TableCell className="py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <RecordPaymentDialog
+                            students={[row.student]}
+                            defaultStudentId={row.student.id}
+                            trigger={
+                              <Button
+                                size="sm"
+                                className="h-8 gap-1.5 px-3 text-xs font-medium"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                                Record Fee
+                              </Button>
+                            }
+                          />
+
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            <Link href={`/students/${row.student.id}`}>View</Link>
                           </Button>
-                        }
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
         </>
       )}
+
+      {/* Footer Info */}
+      <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
+        <span>
+          Showing {filteredRows.length} of {pendingRows.length} pending student{pendingRows.length === 1 ? '' : 's'}
+        </span>
+        <div className="flex items-center gap-2">
+          {isFetching && (
+            <span role="status" aria-live="polite" className="text-muted-foreground">
+              Syncing…
+            </span>
+          )}
+          <span>Updated {formatDateTime(dataUpdatedAt || Date.now())}</span>
+        </div>
+      </div>
     </div>
   );
 }
