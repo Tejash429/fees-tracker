@@ -2,7 +2,7 @@ import { StudentsTable } from '@/components/students/students-table';
 import { StudentFormSheet } from '@/components/students/student-form-sheet';
 import { StudentImportDialog } from '@/components/students/student-import-dialog';
 import { PageHeader } from '@/components/shared/page-header';
-import { getStudentsTableData } from '@/lib/queries';
+import { getStudents, getStudentsTableData } from '@/lib/queries';
 import { SortDirection, StudentClass, StudentsSortBy } from '@/types';
 
 interface StudentsPageProps {
@@ -31,14 +31,17 @@ export default async function StudentsPage({ searchParams }: StudentsPageProps) 
 
   const sortDir: SortDirection = searchParams?.sortDir === 'asc' ? 'asc' : 'desc';
 
-  const studentsData = await getStudentsTableData({
-    search,
-    classFilter,
-    page,
-    pageSize: 10,
-    sortBy,
-    sortDir
-  });
+  const [studentsData, allStudents] = await Promise.all([
+    getStudentsTableData({
+      search,
+      classFilter,
+      page,
+      pageSize: 10,
+      sortBy,
+      sortDir
+    }),
+    getStudents()
+  ]);
 
   return (
     <div className="space-y-6">
@@ -53,7 +56,7 @@ export default async function StudentsPage({ searchParams }: StudentsPageProps) 
         }
       />
 
-      <StudentsTable initialData={studentsData} />
+      <StudentsTable initialData={studentsData} allStudents={allStudents} />
     </div>
   );
 }
