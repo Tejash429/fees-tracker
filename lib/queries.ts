@@ -2,6 +2,8 @@ import { getYearlyFeeMap } from '@/lib/fee-settings';
 import { calculateDueAmount } from '@/lib/fees';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
 import {
+  AnalyticsData,
+  DashboardData,
   DashboardStats,
   DonutPoint,
   MonthlyRevenuePoint,
@@ -110,6 +112,26 @@ export async function getStudentsTableData(options: GetStudentsTableOptions = {}
     totalPages,
     sortBy,
     sortDir
+  };
+}
+
+export async function getStudentCounts(): Promise<{ total: number; class9: number; class10: number }> {
+  const supabase = createServerSupabaseClient();
+
+  const [totalRes, class9Res, class10Res] = await Promise.all([
+    supabase.from('students').select('*', { count: 'exact', head: true }),
+    supabase.from('students').select('*', { count: 'exact', head: true }).eq('class', '9'),
+    supabase.from('students').select('*', { count: 'exact', head: true }).eq('class', '10')
+  ]);
+
+  if (totalRes.error) throw new Error(totalRes.error.message);
+  if (class9Res.error) throw new Error(class9Res.error.message);
+  if (class10Res.error) throw new Error(class10Res.error.message);
+
+  return {
+    total: totalRes.count || 0,
+    class9: class9Res.count || 0,
+    class10: class10Res.count || 0
   };
 }
 
@@ -275,7 +297,7 @@ export async function getPaymentsTableData(options: GetPaymentsTableOptions = {}
   };
 }
 
-function buildMonthlyRevenue(payments: PaymentWithStudent[], months = 12): MonthlyRevenuePoint[] {
+function buildMonthlyRevenue(payments: Array<Pick<Payment, 'amount' | 'payment_date'>>, months = 12): MonthlyRevenuePoint[] {
   const now = new Date();
   const monthKeys: string[] = [];
 
@@ -300,23 +322,23 @@ function buildMonthlyRevenue(payments: PaymentWithStudent[], months = 12): Month
 }
 
 function buildPending(
-  students: Student[],
-  payments: Payment[],
+  students: Array<Pick<Student, 'id' | 'class'> & Partial<Student>>,
+  payments: Array<Pick<Payment, 'student_id' | 'period_end' | 'payment_type'> & Partial<Payment>>,
   yearlyFeeMap: Record<'9' | '10', number>
 ): PendingStudent[] {
   const latestPaymentByStudent = new Map<string, Payment>();
 
   payments.forEach((payment) => {
-    const existing = latestPaymentByStudent.get(payment.student_id);
+    const existing = latestPaymentByStudent.get(payment.student_id!);
     if (!existing) {
-      latestPaymentByStudent.set(payment.student_id, payment);
+      latestPaymentByStudent.set(payment.student_id!, payment as Payment);
       return;
     }
 
     const currentEnd = new Date(existing.period_end).getTime();
-    const incomingEnd = new Date(payment.period_end).getTime();
+    const incomingEnd = new Date(payment.period_end!).getTime();
     if (incomingEnd > currentEnd) {
-      latestPaymentByStudent.set(payment.student_id, payment);
+      latestPaymentByStudent.set(payment.student_id!, payment as Payment);
     }
   });
 
@@ -324,13 +346,13 @@ function buildPending(
   today.setHours(0, 0, 0, 0);
 
   return students.reduce<PendingStudent[]>((acc, student) => {
-    const latestPayment = latestPaymentByStudent.get(student.id) || null;
+    const latestPayment = latestPaymentByStudent.get(student.id!) || null;
 
     if (!latestPayment) {
       acc.push({
-        student,
+        student: student as Student,
         latestPayment: null,
-        dueAmount: calculateDueAmount(student.class, null, yearlyFeeMap),
+        dueAmount: calculateDueAmount(student.class!, null, yearlyFeeMap),
         dueStatus: 'never_paid'
       });
       return acc;
@@ -341,9 +363,9 @@ function buildPending(
 
     if (endDate < today) {
       acc.push({
-        student,
+        student: student as Student,
         latestPayment,
-        dueAmount: calculateDueAmount(student.class, latestPayment.payment_type, yearlyFeeMap),
+        dueAmount: calculateDueAmount(student.class!, latestPayment.payment_type, yearlyFeeMap),
         dueStatus: 'overdue'
       });
     }
@@ -352,10 +374,42 @@ function buildPending(
   }, []);
 }
 
-export async function getDashboardData() {
-  const [students, payments, yearlyFeeMap] = await Promise.all([getStudents(), getPayments(), getYearlyFeeMap()]);
+export async function getDashboardData(): Promise<DashboardData> {
+  const supabase = createServerSupabaseClient();
 
-  const totalCollected = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const [
+    totalStudentsRes,
+    recentPaymentsRes,
+    revenuePaymentsRes,
+    pendingStudentsRes,
+    pendingPayments,
+    yearlyFeeMap
+  ] = await Promise.all([
+    supabase.from('students').select('*', { count: 'exact', head: true }),
+    supabase
+      .from('payments')
+      .select('*, students(id, name, class, phone, parent_name)')
+      .order('payment_date', { ascending: false })
+      .limit(8),
+    supabase
+      .from('payments')
+      .select('amount, payment_date, payment_type, students(class)')
+      .order('payment_date', { ascending: false }),
+    supabase.from('students').select('id, class'),
+    getPaymentsForPending(),
+    getYearlyFeeMap()
+  ]);
+
+  if (totalStudentsRes.error) throw new Error(totalStudentsRes.error.message);
+  if (recentPaymentsRes.error) throw new Error(recentPaymentsRes.error.message);
+  if (revenuePaymentsRes.error) throw new Error(revenuePaymentsRes.error.message);
+  if (pendingStudentsRes.error) throw new Error(pendingStudentsRes.error.message);
+
+  const revenuePayments = revenuePaymentsRes.data || [];
+  const recentPayments = (recentPaymentsRes.data || []) as PaymentWithStudent[];
+  const pendingStudents = (pendingStudentsRes.data || []) as Student[];
+
+  const totalCollected = revenuePayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
   const now = new Date();
   const currentMonth = now.getMonth();
@@ -368,7 +422,7 @@ export async function getDashboardData() {
   let thisMonthCollection = 0;
   let previousMonthCollection = 0;
 
-  payments.forEach((payment) => {
+  revenuePayments.forEach((payment) => {
     const date = new Date(payment.payment_date);
 
     if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
@@ -388,7 +442,7 @@ export async function getDashboardData() {
         : 0
       : ((thisMonthCollection - previousMonthCollection) / previousMonthCollection) * 100;
 
-  const pendingList = buildPending(students, payments, yearlyFeeMap);
+  const pendingList = buildPending(pendingStudents, pendingPayments, yearlyFeeMap);
   const pendingDues = pendingList.reduce((sum, item) => sum + item.dueAmount, 0);
 
   const stats: DashboardStats = {
@@ -396,7 +450,7 @@ export async function getDashboardData() {
     thisMonthCollection,
     previousMonthCollection,
     thisMonthDeltaPct,
-    totalStudents: students.length,
+    totalStudents: totalStudentsRes.count || 0,
     pendingDues,
     pendingStudentsCount: pendingList.length
   };
@@ -406,9 +460,9 @@ export async function getDashboardData() {
     '10': 0
   };
 
-  payments.forEach((payment) => {
-    const cls = payment.students?.class;
-    if (!cls) return;
+  revenuePayments.forEach((payment: any) => {
+    const cls = payment.students?.class as '9' | '10' | undefined;
+    if (!cls || (cls !== '9' && cls !== '10')) return;
     classRevenueMap[cls] += Number(payment.amount || 0);
   });
 
@@ -419,9 +473,9 @@ export async function getDashboardData() {
 
   return {
     stats,
-    monthlyRevenue: buildMonthlyRevenue(payments, 8),
+    monthlyRevenue: buildMonthlyRevenue(revenuePayments, 8),
     classDonut,
-    recentPayments: payments.slice(0, 8)
+    recentPayments
   };
 }
 
@@ -435,14 +489,25 @@ export async function getPendingStudentsData() {
   return buildPending(students, payments, yearlyFeeMap);
 }
 
-export async function getAnalyticsData() {
-  const payments = await getPayments();
+export async function getAnalyticsData(): Promise<AnalyticsData> {
+  const supabase = createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from('payments')
+    .select('amount, payment_date, payment_type, students(class)')
+    .order('payment_date', { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const payments = (data || []) as any[];
 
   const monthlyRevenue = buildMonthlyRevenue(payments, 12);
 
   const paymentTypeTotals = payments.reduce(
     (acc, payment) => {
-      acc[payment.payment_type] += Number(payment.amount || 0);
+      acc[payment.payment_type as PaymentType] =
+        (acc[payment.payment_type as PaymentType] || 0) + Number(payment.amount || 0);
       return acc;
     },
     {
@@ -467,8 +532,8 @@ export async function getAnalyticsData() {
 
   const classRevenue = payments.reduce(
     (acc, payment) => {
-      const studentClass = payment.students?.class;
-      if (!studentClass) return acc;
+      const studentClass = payment.students?.class as '9' | '10' | undefined;
+      if (!studentClass || (studentClass !== '9' && studentClass !== '10')) return acc;
       acc[studentClass] += Number(payment.amount || 0);
       return acc;
     },

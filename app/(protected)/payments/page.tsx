@@ -1,7 +1,7 @@
 import { PageHeader } from '@/components/shared/page-header';
 import { PaymentsTable } from '@/components/payments/payments-table';
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog';
-import { getPaymentsTableData, getStudents } from '@/lib/queries';
+import { getPaymentsTableData } from '@/lib/queries';
 import { PaymentType, PaymentsSortBy, SortDirection, StudentClass } from '@/types';
 
 interface PaymentsPageProps {
@@ -33,20 +33,25 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
 
   const sortDir: SortDirection = searchParams?.sortDir === 'asc' ? 'asc' : 'desc';
 
-  const [paymentsData, students] = await Promise.all([
-    getPaymentsTableData({ search, classFilter, typeFilter, page, pageSize: 10, sortBy, sortDir }),
-    getStudents()
-  ]);
+  const paymentsData = await getPaymentsTableData({
+    search,
+    classFilter,
+    typeFilter,
+    page,
+    pageSize: 10,
+    sortBy,
+    sortDir
+  });
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Payments"
         description="View all transactions, apply filters, and record fee payments."
-        actions={<RecordPaymentDialog students={students} />}
+        actions={<RecordPaymentDialog />}
       />
 
-      <PaymentsTable initialData={paymentsData} initialStudents={students} />
+      <PaymentsTable initialData={paymentsData} />
     </div>
   );
 }

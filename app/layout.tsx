@@ -4,7 +4,7 @@ import { Toaster } from 'sonner';
 import { QueryProvider } from '@/components/providers/query-provider';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'Fee Tracker Dashboard',

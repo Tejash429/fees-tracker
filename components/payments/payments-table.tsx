@@ -50,7 +50,7 @@ import { OverflowMenu } from '@/components/shared/overflow-menu';
 import { DeletePaymentButton } from '@/components/payments/delete-payment-button';
 import { PaymentDetailsSheet } from '@/components/payments/payment-details-sheet';
 import { RecordPaymentDialog } from '@/components/payments/record-payment-dialog';
-import { fetchPaymentsTableClient, fetchStudentsClient } from '@/lib/query-client-fetchers';
+import { fetchPaymentsTableClient } from '@/lib/query-client-fetchers';
 import { queryKeys } from '@/lib/query-keys';
 import { cn, formatCurrency, formatDate, formatDateTime, toISODate } from '@/lib/utils';
 import { PaymentType, PaymentsSortBy, PaymentsTableData, Student, StudentClass } from '@/types';
@@ -157,7 +157,7 @@ export function PaymentsTable({
   initialStudents
 }: {
   initialData: PaymentsTableData;
-  initialStudents: Student[];
+  initialStudents?: Student[];
 }) {
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -277,19 +277,11 @@ export function PaymentsTable({
     placeholderData: (previousData) => previousData
   });
 
-  const { data: students = initialStudents, isPending: isPendingStudents, isFetching: isFetchingStudents } = useQuery(
-    {
-      queryKey: queryKeys.students,
-      queryFn: fetchStudentsClient,
-      initialData: initialStudents
-    }
-  );
-
   const payments = data?.rows ?? initialData.rows;
   const total = data?.total ?? initialData.total;
   const totalPages = Math.max(1, data?.totalPages ?? initialData.totalPages);
-  const isPending = isPendingPayments || isPendingStudents;
-  const isFetching = isFetchingPayments || isFetchingStudents;
+  const isPending = isPendingPayments;
+  const isFetching = isFetchingPayments;
 
   const selectedIdSet = useMemo(() => new Set(selectedPaymentIds), [selectedPaymentIds]);
   const visiblePaymentIds = useMemo(() => payments.map((payment) => payment.id), [payments]);
@@ -678,7 +670,7 @@ export function PaymentsTable({
           <EmptyState
             title="No payments yet"
             description="Start by recording your first fee payment."
-            action={<RecordPaymentDialog students={students} />}
+            action={<RecordPaymentDialog />}
           />
         )
       ) : (
@@ -790,8 +782,6 @@ export function PaymentsTable({
                         <RecordPaymentDialog
                           mode="edit"
                           payment={payment}
-                          students={students}
-                          payments={payments}
                           trigger={
                             <Button variant="ghost" size="sm" className="w-full justify-start text-xs">
                               Edit payment
@@ -998,8 +988,6 @@ export function PaymentsTable({
                             <RecordPaymentDialog
                               mode="edit"
                               payment={payment}
-                              students={students}
-                              payments={payments}
                               trigger={
                                 <Button variant="ghost" size="sm" className="w-full justify-start text-xs">
                                   Edit payment

@@ -6,7 +6,7 @@ import { Pencil, PlusCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { createPaymentAction, updatePaymentAction } from '@/lib/actions';
 import { DEFAULT_YEARLY_FEE_MAP, calculateAmount, calculatePeriodEnd, deriveHalfYearlyFee } from '@/lib/fees';
-import { fetchFeeSettingsClient, fetchPaymentsClient, fetchStudentsClient } from '@/lib/query-client-fetchers';
+import { fetchFeeSettingsClient, fetchPaymentsByStudentClient, fetchStudentsClient } from '@/lib/query-client-fetchers';
 import { queryKeys } from '@/lib/query-keys';
 import { formatCurrency, toISODate } from '@/lib/utils';
 import { Payment, PaymentType, Student } from '@/types';
@@ -34,7 +34,7 @@ import { Textarea } from '@/components/ui/textarea';
 interface RecordPaymentDialogProps {
   mode?: 'create' | 'edit';
   payment?: Payment;
-  students: Student[];
+  students?: Student[];
   payments?: Array<Pick<Payment, 'student_id' | 'payment_type'>>;
   trigger?: React.ReactNode;
   defaultStudentId?: string;
@@ -83,7 +83,7 @@ function getInitialState(mode: 'create' | 'edit', payment?: Payment, defaultStud
 export function RecordPaymentDialog({
   mode = 'create',
   payment,
-  students,
+  students = [],
   payments = [],
   trigger,
   defaultStudentId,
@@ -98,18 +98,29 @@ export function RecordPaymentDialog({
   const isControlled = typeof controlledOpen === 'boolean';
   const open = isControlled ? controlledOpen : internalOpen;
 
+  const initialState = getInitialState(mode, payment, defaultStudentId);
+
+  const [studentId, setStudentId] = useState(initialState.studentId);
+  const [paymentType, setPaymentType] = useState<PaymentType>(initialState.paymentType);
+  const [periodStart, setPeriodStart] = useState(initialState.periodStart);
+  const [periodEnd, setPeriodEnd] = useState(initialState.periodEnd);
+  const [paymentDate, setPaymentDate] = useState(initialState.paymentDate);
+  const [amount, setAmount] = useState<number>(initialState.amount);
+  const [notes, setNotes] = useState(initialState.notes);
+  const [manualPeriodEnd, setManualPeriodEnd] = useState(initialState.manualPeriodEnd);
+  const [errors, setErrors] = useState<PaymentFormErrors>({});
+
   const { data: liveStudents = students } = useQuery({
     queryKey: queryKeys.students,
     queryFn: fetchStudentsClient,
-    initialData: students,
+    initialData: students.length > 1 ? students : undefined,
     enabled: open
   });
 
-  const { data: livePayments = payments as Payment[] } = useQuery({
-    queryKey: queryKeys.payments,
-    queryFn: fetchPaymentsClient,
-    initialData: payments as Payment[],
-    enabled: open
+  const { data: livePayments = [] } = useQuery({
+    queryKey: queryKeys.paymentsByStudent(studentId),
+    queryFn: () => fetchPaymentsByStudentClient(studentId),
+    enabled: open && Boolean(studentId)
   });
 
   const { data: feeSettings = [] } = useQuery({
@@ -126,36 +137,16 @@ export function RecordPaymentDialog({
     [feeSettings]
   );
 
-  const initialState = getInitialState(mode, payment, defaultStudentId);
-
-  const [studentId, setStudentId] = useState(initialState.studentId);
-  const [paymentType, setPaymentType] = useState<PaymentType>(initialState.paymentType);
-  const [periodStart, setPeriodStart] = useState(initialState.periodStart);
-  const [periodEnd, setPeriodEnd] = useState(initialState.periodEnd);
-  const [paymentDate, setPaymentDate] = useState(initialState.paymentDate);
-  const [amount, setAmount] = useState<number>(initialState.amount);
-  const [notes, setNotes] = useState(initialState.notes);
-  const [manualPeriodEnd, setManualPeriodEnd] = useState(initialState.manualPeriodEnd);
-  const [errors, setErrors] = useState<PaymentFormErrors>({});
-
   const selectedStudent = useMemo(
     () => liveStudents.find((student) => student.id === studentId),
     [liveStudents, studentId]
   );
 
-  const hasHalfYearlyHistoryByStudent = useMemo(() => {
-    const map = new Map<string, boolean>();
-
-    livePayments.forEach((item) => {
-      if (item.payment_type === 'half_yearly') {
-        map.set(item.student_id, true);
-      }
-    });
-
-    return map;
+  const hasHalfYearlyHistory = useMemo(() => {
+    return livePayments.some((item) => item.payment_type === 'half_yearly');
   }, [livePayments]);
 
-  const canUseYearlyForSelectedStudent = !studentId || !hasHalfYearlyHistoryByStudent.get(studentId);
+  const canUseYearlyForSelectedStudent = !studentId || !hasHalfYearlyHistory;
 
   useEffect(() => {
     if (!selectedStudent) return;
@@ -177,9 +168,9 @@ export function RecordPaymentDialog({
       return;
     }
 
-    const studentPayments = livePayments
-      .filter((p) => p.student_id === studentId)
-      .sort((a, b) => new Date(b.period_end).getTime() - new Date(a.period_end).getTime());
+    const studentPayments = [...livePayments].sort(
+      (a, b) => new Date(b.period_end).getTime() - new Date(a.period_end).getTime()
+    );
 
     let computedStart = paymentDate || toISODate();
     if (studentPayments.length > 0 && studentPayments[0].period_end) {
@@ -284,6 +275,7 @@ export function RecordPaymentDialog({
 
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.payments }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.paymentsByStudent(studentId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.paymentsTableRoot }),
         queryClient.invalidateQueries({ queryKey: queryKeys.pending }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard }),

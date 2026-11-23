@@ -160,37 +160,35 @@ export async function createPaymentAction(input: PaymentFormInput): Promise<Acti
   const { supabase, error: authError } = await ensureAuthenticated();
   if (!supabase) return { success: false, error: authError || 'Unauthorized' };
 
-  const { data: student, error: studentError } = await supabase
-    .from('students')
-    .select('id, class')
-    .eq('id', input.student_id)
-    .single();
+  const [studentRes, halfYearlyRes, yearlyFeeMap] = await Promise.all([
+    supabase.from('students').select('id, class').eq('id', input.student_id).single(),
+    input.payment_type === 'yearly'
+      ? supabase
+          .from('payments')
+          .select('id')
+          .eq('student_id', input.student_id)
+          .eq('payment_type', 'half_yearly')
+          .limit(1)
+      : Promise.resolve({ data: [], error: null }),
+    getYearlyFeeMap()
+  ]);
 
-  if (studentError || !student) {
-    return { success: false, error: studentError?.message || 'Student not found.' };
+  if (studentRes.error || !studentRes.data) {
+    return { success: false, error: studentRes.error?.message || 'Student not found.' };
   }
 
-  if (input.payment_type === 'yearly') {
-    const { data: halfYearlyPayments, error: halfYearlyPaymentsError } = await supabase
-      .from('payments')
-      .select('id')
-      .eq('student_id', input.student_id)
-      .eq('payment_type', 'half_yearly')
-      .limit(1);
-
-    if (halfYearlyPaymentsError) {
-      return { success: false, error: halfYearlyPaymentsError.message };
-    }
-
-    if (halfYearlyPayments.length > 0) {
-      return {
-        success: false,
-        error: 'Yearly payment is not allowed because first half-yearly installment is already recorded.'
-      };
-    }
+  if (halfYearlyRes.error) {
+    return { success: false, error: halfYearlyRes.error.message };
   }
 
-  const yearlyFeeMap = await getYearlyFeeMap();
+  if (input.payment_type === 'yearly' && halfYearlyRes.data && halfYearlyRes.data.length > 0) {
+    return {
+      success: false,
+      error: 'Yearly payment is not allowed because first half-yearly installment is already recorded.'
+    };
+  }
+
+  const student = studentRes.data;
 
   const amount =
     typeof input.amount === 'number' && !Number.isNaN(input.amount)
@@ -255,37 +253,36 @@ export async function updatePaymentAction(input: PaymentUpdateInput): Promise<Ac
   const { supabase, error: authError } = await ensureAuthenticated();
   if (!supabase) return { success: false, error: authError || 'Unauthorized' };
 
-  const { data: student, error: studentError } = await supabase
-    .from('students')
-    .select('id, class')
-    .eq('id', input.student_id)
-    .single();
+  const [studentRes, halfYearlyRes, yearlyFeeMap] = await Promise.all([
+    supabase.from('students').select('id, class').eq('id', input.student_id).single(),
+    input.payment_type === 'yearly'
+      ? supabase
+          .from('payments')
+          .select('id')
+          .eq('student_id', input.student_id)
+          .eq('payment_type', 'half_yearly')
+          .neq('id', input.id)
+          .limit(1)
+      : Promise.resolve({ data: [], error: null }),
+    getYearlyFeeMap()
+  ]);
 
-  if (studentError || !student) {
-    return { success: false, error: studentError?.message || 'Student not found.' };
+  if (studentRes.error || !studentRes.data) {
+    return { success: false, error: studentRes.error?.message || 'Student not found.' };
   }
 
-  if (input.payment_type === 'yearly') {
-    const { data: halfYearlyPayments, error: halfYearlyPaymentsError } = await supabase
-      .from('payments')
-      .select('id')
-      .eq('student_id', input.student_id)
-      .eq('payment_type', 'half_yearly')
-      .limit(1);
-
-    if (halfYearlyPaymentsError) {
-      return { success: false, error: halfYearlyPaymentsError.message };
-    }
-
-    if (halfYearlyPayments.length > 0) {
-      return {
-        success: false,
-        error: 'Yearly payment is not allowed because first half-yearly installment is already recorded.'
-      };
-    }
+  if (halfYearlyRes.error) {
+    return { success: false, error: halfYearlyRes.error.message };
   }
 
-  const yearlyFeeMap = await getYearlyFeeMap();
+  if (input.payment_type === 'yearly' && halfYearlyRes.data && halfYearlyRes.data.length > 0) {
+    return {
+      success: false,
+      error: 'Yearly payment is not allowed because first half-yearly installment is already recorded.'
+    };
+  }
+
+  const student = studentRes.data;
 
   const amount =
     typeof input.amount === 'number' && !Number.isNaN(input.amount)

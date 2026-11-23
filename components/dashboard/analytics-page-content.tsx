@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import {
   BarChart3,
   CreditCard,
@@ -11,18 +12,48 @@ import {
   Wallet
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { CumulativeLineChart } from '@/components/dashboard/cumulative-line-chart';
-import { RevenueBarChart } from '@/components/dashboard/revenue-bar-chart';
-import { RevenueDonutChart } from '@/components/dashboard/revenue-donut-chart';
 import { EmptyState } from '@/components/shared/empty-state';
 import { PageHeader } from '@/components/shared/page-header';
 import { AnalyticsPageSkeleton } from '@/components/skeletons/analytics-page-skeleton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { fetchAnalyticsDataClient } from '@/lib/query-client-fetchers';
 import { queryKeys } from '@/lib/query-keys';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { AnalyticsData } from '@/types';
+
+const CumulativeLineChart = dynamic(
+  () => import('@/components/dashboard/cumulative-line-chart').then((mod) => mod.CumulativeLineChart),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-80 w-full rounded-lg" />
+  }
+);
+
+const RevenueBarChart = dynamic(
+  () => import('@/components/dashboard/revenue-bar-chart').then((mod) => mod.RevenueBarChart),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-80 w-full rounded-lg" />
+  }
+);
+
+const RevenueDonutChart = dynamic(
+  () => import('@/components/dashboard/revenue-donut-chart').then((mod) => mod.RevenueDonutChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="space-y-3">
+        <Skeleton className="h-72 w-full rounded-lg" />
+        <div className="space-y-1">
+          <Skeleton className="h-8 w-full rounded-md" />
+          <Skeleton className="h-8 w-full rounded-md" />
+        </div>
+      </div>
+    )
+  }
+);
 
 export function AnalyticsPageContent({ initialData }: { initialData: AnalyticsData }) {
   const { data, isFetching, isPending, dataUpdatedAt } = useQuery({

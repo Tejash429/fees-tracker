@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowUpDown, Calendar, Download, Eye, Phone, Search, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -124,10 +125,10 @@ function StudentsTableSkeleton() {
 
 export function StudentsTable({
   initialData,
-  allStudents = []
+  initialCounts
 }: {
   initialData: StudentsTableData;
-  allStudents?: Student[];
+  initialCounts?: { total: number; class9: number; class10: number };
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -227,22 +228,13 @@ export function StudentsTable({
     placeholderData: (previousData) => previousData
   });
 
-  const { data: liveAllStudents = allStudents } = useQuery({
-    queryKey: queryKeys.students,
-    queryFn: fetchStudentsClient,
-    initialData: allStudents
-  });
+  const [isExporting, setIsExporting] = useState(false);
 
   const students = data?.rows ?? initialData.rows;
   const total = data?.total ?? initialData.total;
   const totalPages = Math.max(1, data?.totalPages ?? initialData.totalPages);
 
-  const counts = useMemo(() => {
-    const totalCount = liveAllStudents.length;
-    const class9Count = liveAllStudents.filter((s) => s.class === '9').length;
-    const class10Count = liveAllStudents.filter((s) => s.class === '10').length;
-    return { total: totalCount, class9: class9Count, class10: class10Count };
-  }, [liveAllStudents]);
+  const counts = initialCounts ?? { total: initialData.total, class9: 0, class10: 0 };
 
   useEffect(() => {
     const nextSearch = searchParams.get('q') || '';
@@ -440,20 +432,28 @@ export function StudentsTable({
             <Button
               variant="outline"
               className="h-10 gap-2 bg-background/60"
-              disabled={!students.length}
-              onClick={() => {
-                const exportRows = students.map((s) => ({
-                  'Student Name': s.name,
-                  'Class': `Class ${s.class}`,
-                  'Phone': s.phone || '—',
-                  'Enrollment Date': s.enrollment_date,
-                  'Created At': s.created_at
-                }));
-                exportToExcel(exportRows, `Students_${toISODate()}`);
+              disabled={!students.length || isExporting}
+              onClick={async () => {
+                try {
+                  setIsExporting(true);
+                  const allStudents = await fetchStudentsClient();
+                  const exportRows = allStudents.map((s) => ({
+                    'Student Name': s.name,
+                    'Class': `Class ${s.class}`,
+                    'Phone': s.phone || '—',
+                    'Enrollment Date': s.enrollment_date,
+                    'Created At': s.created_at
+                  }));
+                  exportToExcel(exportRows, `Students_${toISODate()}`);
+                } catch {
+                  toast.error('Failed to export students');
+                } finally {
+                  setIsExporting(false);
+                }
               }}
             >
               <Download className="h-4 w-4" />
-              <span>Export</span>
+              <span>{isExporting ? 'Exporting...' : 'Export'}</span>
             </Button>
           </div>
         </div>

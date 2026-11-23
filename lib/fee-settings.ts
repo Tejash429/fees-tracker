@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
 import { DEFAULT_YEARLY_FEE_MAP, deriveHalfYearlyFee } from '@/lib/fees';
 import { FeeSetting, StudentClass } from '@/types';
@@ -30,7 +31,7 @@ export function toYearlyFeeMap(settings: FeeSetting[]): Record<StudentClass, num
   };
 }
 
-export async function getFeeSettings(): Promise<FeeSetting[]> {
+export const getFeeSettings = cache(async (): Promise<FeeSetting[]> => {
   const supabase = createServerSupabaseClient();
 
   const { data, error } = await supabase.from('fee_settings').select('class, yearly_fee');
@@ -56,9 +57,9 @@ export async function getFeeSettings(): Promise<FeeSetting[]> {
       halfYearlyFee: deriveHalfYearlyFee(yearlyFee)
     };
   });
-}
+});
 
-export async function getYearlyFeeMap(): Promise<Record<StudentClass, number>> {
+export const getYearlyFeeMap = cache(async (): Promise<Record<StudentClass, number>> => {
   const settings = await getFeeSettings();
   return toYearlyFeeMap(settings);
-}
+});

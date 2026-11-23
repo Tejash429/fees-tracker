@@ -3,19 +3,43 @@
 import Link from 'next/link';
 import { ArrowRight, BarChart3, ChevronRight, CreditCard, PieChart, Users } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/shared/empty-state';
 import { PageHeader } from '@/components/shared/page-header';
 import { DashboardPageSkeleton } from '@/components/skeletons/dashboard-page-skeleton';
 import { RecentPaymentsTable } from '@/components/dashboard/recent-payments-table';
-import { RevenueBarChart } from '@/components/dashboard/revenue-bar-chart';
-import { RevenueDonutChart } from '@/components/dashboard/revenue-donut-chart';
 import { StatCards } from '@/components/dashboard/stat-cards';
 import { fetchDashboardDataClient } from '@/lib/query-client-fetchers';
 import { queryKeys } from '@/lib/query-keys';
 import { formatDateTime } from '@/lib/utils';
 import { DashboardData } from '@/types';
+
+const RevenueBarChart = dynamic(
+  () => import('@/components/dashboard/revenue-bar-chart').then((mod) => mod.RevenueBarChart),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-80 w-full rounded-lg" />
+  }
+);
+
+const RevenueDonutChart = dynamic(
+  () => import('@/components/dashboard/revenue-donut-chart').then((mod) => mod.RevenueDonutChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="space-y-3">
+        <Skeleton className="h-72 w-full rounded-lg" />
+        <div className="space-y-1">
+          <Skeleton className="h-8 w-full rounded-md" />
+          <Skeleton className="h-8 w-full rounded-md" />
+        </div>
+      </div>
+    )
+  }
+);
 
 export function DashboardPageContent({ initialData }: { initialData: DashboardData }) {
   const { data, isFetching, isPending, dataUpdatedAt } = useQuery({
